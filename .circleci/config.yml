@@ -1,17 +1,18 @@
 ---
+version: 2.1
+
 executors:
   golang:
     docker:
-    - image: cimg/go:1.17
+    - image: cimg/go:1.18
 
-version: 2.1
 jobs:
   build:
     executor: golang
     steps:
       - checkout
       - run: go mod download
-      - run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.31.0
+      - run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.46.2
       - run: golangci-lint run
       - run: make
       - run: cd /tmp && curl -L --remote-name https://github.com/goreleaser/goreleaser/releases/download/v1.8.3/goreleaser_Linux_x86_64.tar.gz
