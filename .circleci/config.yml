@@ -1,10 +1,11 @@
 ---
+version: 2.1
+
 executors:
   golang:
     docker:
-    - image: cimg/go:1.17
+    - image: cimg/go:1.18
 
-version: 2.1
 jobs:
   build:
     executor: golang
