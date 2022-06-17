@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/go-ping/ping"
+	probing "github.com/prometheus-community/pro-bing"
 )
 
 var usage = `
@@ -54,7 +54,7 @@ func main() {
 	}
 
 	host := flag.Arg(0)
-	pinger, err := ping.NewPinger(host)
+	pinger, err := probing.NewPinger(host)
 	if err != nil {
 		fmt.Println("ERROR:", err)
 		return
@@ -69,15 +69,15 @@ func main() {
 		}
 	}()
 
-	pinger.OnRecv = func(pkt *ping.Packet) {
+	pinger.OnRecv = func(pkt *probing.Packet) {
 		fmt.Printf("%d bytes from %s: icmp_seq=%d time=%v ttl=%v\n",
 			pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt, pkt.Ttl)
 	}
-	pinger.OnDuplicateRecv = func(pkt *ping.Packet) {
+	pinger.OnDuplicateRecv = func(pkt *probing.Packet) {
 		fmt.Printf("%d bytes from %s: icmp_seq=%d time=%v ttl=%v (DUP!)\n",
 			pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt, pkt.Ttl)
 	}
-	pinger.OnFinish = func(stats *ping.Statistics) {
+	pinger.OnFinish = func(stats *probing.Statistics) {
 		fmt.Printf("\n--- %s ping statistics ---\n", stats.Addr)
 		fmt.Printf("%d packets transmitted, %d packets received, %d duplicates, %v%% packet loss\n",
 			stats.PacketsSent, stats.PacketsRecv, stats.PacketsRecvDuplicates, stats.PacketLoss)

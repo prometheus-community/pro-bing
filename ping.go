@@ -1,8 +1,8 @@
-// Package ping is a simple but powerful ICMP echo (ping) library.
+// Package probing is a simple but powerful ICMP echo (ping) library.
 //
 // Here is a very simple example that sends and receives three packets:
 //
-//	pinger, err := ping.NewPinger("www.google.com")
+//	pinger, err := probing.NewPinger("www.google.com")
 //	if err != nil {
 //		panic(err)
 //	}
@@ -15,7 +15,7 @@
 //
 // Here is an example that emulates the traditional UNIX ping command:
 //
-//	pinger, err := ping.NewPinger("www.google.com")
+//	pinger, err := probing.NewPinger("www.google.com")
 //	if err != nil {
 //		panic(err)
 //	}
@@ -27,11 +27,11 @@
 //			pinger.Stop()
 //		}
 //	}()
-//	pinger.OnRecv = func(pkt *ping.Packet) {
+//	pinger.OnRecv = func(pkt *probing.Packet) {
 //		fmt.Printf("%d bytes from %s: icmp_seq=%d time=%v\n",
 //			pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt)
 //	}
-//	pinger.OnFinish = func(stats *ping.Statistics) {
+//	pinger.OnFinish = func(stats *probing.Statistics) {
 //		fmt.Printf("\n--- %s ping statistics ---\n", stats.Addr)
 //		fmt.Printf("%d packets transmitted, %d packets received, %v%% packet loss\n",
 //			stats.PacketsSent, stats.PacketsRecv, stats.PacketLoss)
@@ -50,7 +50,7 @@
 //
 // For a full ping example, see "cmd/ping/ping.go".
 //
-package ping
+package probing
 
 import (
 	"bytes"
@@ -812,7 +812,7 @@ func timeToBytes(t time.Time) []byte {
 	return b
 }
 
-var seed int64 = time.Now().UnixNano()
+var seed = time.Now().UnixNano()
 
 // getSeed returns a goroutine-safe unique seed
 func getSeed() int64 {
