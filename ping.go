@@ -231,7 +231,7 @@ type Packet struct {
 	Seq int
 
 	// TTL is the Time To Live on the packet.
-	Ttl int
+	TTL int
 
 	// ID is the ICMP identifier.
 	ID int
@@ -652,7 +652,7 @@ func (p *Pinger) processPacket(recv *packet) error {
 		Nbytes: recv.nbytes,
 		IPAddr: p.ipaddr,
 		Addr:   p.addr,
-		Ttl:    recv.ttl,
+		TTL:    recv.ttl,
 		ID:     p.id,
 	}
 
