@@ -3,7 +3,7 @@
 [![Circle CI](https://circleci.com/gh/prometheus-community/pro-bing.svg?style=svg)](https://circleci.com/gh/prometheus-community/pro-bing)
 
 A simple but powerful ICMP echo (ping) library for Go, inspired by
-[go-ping](github.com/go-ping/ping) & [go-fastping](https://github.com/tatsushid/go-fastping).
+[go-ping](https://github.com/go-ping/ping) & [go-fastping](https://github.com/tatsushid/go-fastping).
 
 Here is a very simple example that sends and receives three packets:
 
@@ -130,11 +130,7 @@ language.
 
 This repo was originally in the personal account of
 [sparrc](https://github.com/sparrc), but is now maintained by the
-[go-ping organization](https://github.com/go-ping).
-
-For support and help, you usually find us in the #go-ping channel of
-Gophers Slack. See https://invite.slack.golangbridge.org/ for an invite
-to the Gophers Slack org.
+[Prometheus Community](https://prometheus.io/community).
 
 ## Contributing
 
