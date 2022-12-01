@@ -4,7 +4,7 @@ version: 2.1
 executors:
   golang:
     docker:
-    - image: cimg/go:1.18
+    - image: cimg/go:1.19
 
 jobs:
   build:
