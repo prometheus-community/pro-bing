@@ -13,7 +13,7 @@ Feel free to join us in the #go-ping channel of the [Gophers Slack](https://invi
 [Fork the repo on GitHub](https://github.com/prometheus-community/pro-bing/fork) and clone it to your local machine.
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/pro-bing.git && cd ping
+git clone https://github.com/YOUR_USERNAME/pro-bing.git && cd pro-bing
 ```
 
 Here is a guide on [how to configure a remote repository](https://docs.github.com/en/free-pro-team@latest/github/collaborating-with-issues-and-pull-requests/configuring-a-remote-for-a-fork).
