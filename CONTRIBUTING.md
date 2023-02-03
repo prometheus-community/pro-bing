@@ -6,7 +6,7 @@ Remember that this is open source software so please consider the other people w
 Make it look nice for them, document your logic in comments and add or update the unit test cases.
 
 This library is used by various other projects, companies and individuals in live production environments so please discuss any breaking changes with us before making them.
-Feel free to join us in the #go-ping channel of the [Gophers Slack](https://invite.slack.golangbridge.org/).
+Feel free to join us in the [#pro-bing](https://gophers.slack.com/archives/C019J5E26U8/p1673599762771949) channel of the [Gophers Slack](https://invite.slack.golangbridge.org/).
 
 ## Pull Requests
 
