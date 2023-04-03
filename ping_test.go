@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"runtime/debug"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -711,12 +712,15 @@ func TestRunBadRead(t *testing.T) {
 
 type testPacketConnOK struct {
 	testPacketConn
+	m         sync.Mutex
 	writeDone int32
 	buf       []byte
 	dst       net.Addr
 }
 
 func (c *testPacketConnOK) WriteTo(b []byte, dst net.Addr) (int, error) {
+	c.m.Lock()
+	defer c.m.Unlock()
 	c.buf = make([]byte, len(b))
 	c.dst = dst
 	n := copy(c.buf, b)
@@ -725,6 +729,8 @@ func (c *testPacketConnOK) WriteTo(b []byte, dst net.Addr) (int, error) {
 }
 
 func (c *testPacketConnOK) ReadFrom(b []byte) (n int, ttl int, src net.Addr, err error) {
+	c.m.Lock()
+	defer c.m.Unlock()
 	if atomic.LoadInt32(&c.writeDone) == 0 {
 		return 0, 0, nil, nil
 	}
