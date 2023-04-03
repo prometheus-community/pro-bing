@@ -53,6 +53,7 @@ package probing
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -401,6 +402,13 @@ func (p *Pinger) ID() int {
 // done. If Count or Interval are not specified, it will run continuously until
 // it is interrupted.
 func (p *Pinger) Run() error {
+	return p.RunWithContext(context.Background())
+}
+
+// RunWithContext runs the pinger with a context. This is a blocking function that will exit when it's
+// done or if the context is canceled. If Count or Interval are not specified, it will run continuously until
+// it is interrupted.
+func (p *Pinger) RunWithContext(ctx context.Context) error {
 	var conn packetConn
 	var err error
 	if p.Size < timeSliceLength+trackerLength {
@@ -418,10 +426,10 @@ func (p *Pinger) Run() error {
 	defer conn.Close()
 
 	conn.SetTTL(p.TTL)
-	return p.run(conn)
+	return p.run(ctx, conn)
 }
 
-func (p *Pinger) run(conn packetConn) error {
+func (p *Pinger) run(ctx context.Context, conn packetConn) error {
 	if err := conn.SetFlagTTL(); err != nil {
 		return err
 	}
@@ -434,7 +442,16 @@ func (p *Pinger) run(conn packetConn) error {
 		handler()
 	}
 
-	var g errgroup.Group
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		select {
+		case <-ctx.Done():
+			p.Stop()
+		case <-p.done:
+		}
+		return nil
+	})
 
 	g.Go(func() error {
 		defer p.Stop()

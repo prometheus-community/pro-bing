@@ -2,6 +2,7 @@ package probing
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"net"
 	"runtime/debug"
@@ -667,7 +668,7 @@ func TestRunBadWrite(t *testing.T) {
 
 	var conn testPacketConnBadWrite
 
-	err = pinger.run(conn)
+	err = pinger.run(context.Background(), conn)
 	AssertTrue(t, err != nil)
 
 	stats := pinger.Statistics()
@@ -696,7 +697,7 @@ func TestRunBadRead(t *testing.T) {
 
 	var conn testPacketConnBadRead
 
-	err = pinger.run(conn)
+	err = pinger.run(context.Background(), conn)
 	AssertTrue(t, err != nil)
 
 	stats := pinger.Statistics()
@@ -749,7 +750,7 @@ func TestRunOK(t *testing.T) {
 
 	conn := new(testPacketConnOK)
 
-	err = pinger.run(conn)
+	err = pinger.run(context.Background(), conn)
 	AssertTrue(t, err == nil)
 
 	stats := pinger.Statistics()
@@ -761,4 +762,50 @@ func TestRunOK(t *testing.T) {
 	AssertTrue(t, stats.PacketsRecv == 1)
 	AssertTrue(t, stats.MinRtt >= 10*time.Millisecond)
 	AssertTrue(t, stats.MinRtt <= 12*time.Millisecond)
+}
+
+func TestRunWithTimeoutContext(t *testing.T) {
+	pinger := New("127.0.0.1")
+
+	err := pinger.Resolve()
+	AssertNoError(t, err)
+
+	conn := new(testPacketConnOK)
+
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err = pinger.run(ctx, conn)
+	AssertTrue(t, err == nil)
+	elapsedTime := time.Since(start)
+	AssertTrue(t, elapsedTime < 10*time.Second)
+
+	stats := pinger.Statistics()
+	AssertTrue(t, stats != nil)
+	if stats == nil {
+		t.FailNow()
+	}
+	AssertTrue(t, stats.PacketsSent > 0)
+	AssertTrue(t, stats.PacketsRecv > 0)
+}
+
+func TestRunWithBackgroundContext(t *testing.T) {
+	pinger := New("127.0.0.1")
+	pinger.Count = 10
+	pinger.Interval = 100 * time.Millisecond
+
+	err := pinger.Resolve()
+	AssertNoError(t, err)
+
+	conn := new(testPacketConnOK)
+
+	err = pinger.run(context.Background(), conn)
+	AssertTrue(t, err == nil)
+
+	stats := pinger.Statistics()
+	AssertTrue(t, stats != nil)
+	if stats == nil {
+		t.FailNow()
+	}
+	AssertTrue(t, stats.PacketsRecv == 10)
 }
