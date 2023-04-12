@@ -182,8 +182,8 @@ type Pinger struct {
 	// Source is the source IP address
 	Source string
 
-	// Iface used to send/recv ICMP messages
-	Iface string
+	// Interface used to send/recv ICMP messages
+	Interface string
 
 	// Channel and mutex used to communicate when the Pinger should stop between goroutines.
 	done chan interface{}
@@ -429,12 +429,12 @@ func (p *Pinger) RunWithContext(ctx context.Context) error {
 	defer conn.Close()
 
 	conn.SetTTL(p.TTL)
-	if p.Iface != "" {
-		iface, err := net.InterfaceByName(p.Iface)
+	if p.Interface != "" {
+		iface, err := net.InterfaceByName(p.Interface)
 		if err != nil {
 			return err
 		}
-		conn.SetIfaceIndex(iface.Index)
+		conn.SetIfIndex(iface.Index)
 	}
 	return p.run(ctx, conn)
 }
