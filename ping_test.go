@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"runtime"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
@@ -477,6 +478,26 @@ func TestStatisticsLossy(t *testing.T) {
 	}
 }
 
+func TestSetIfaceName(t *testing.T) {
+	pinger := New("localhost")
+	pinger.Count = 1
+	pinger.Timeout = time.Second
+
+	// Set loopback interface
+	pinger.Iface = "lo"
+	err := pinger.Run()
+	if runtime.GOOS == "linux" {
+		AssertNoError(t, err)
+	} else {
+		AssertError(t, err, "other platforms unsupport this feature")
+	}
+
+	// Set fake interface
+	pinger.Iface = "L()0pB@cK"
+	err = pinger.Run()
+	AssertError(t, err, "device not found")
+}
+
 // Test helpers
 func makeTestPinger() *Pinger {
 	pinger := New("127.0.0.1")
@@ -643,6 +664,7 @@ func (c testPacketConn) ICMPRequestType() icmp.Type        { return ipv4.ICMPTyp
 func (c testPacketConn) SetFlagTTL() error                 { return nil }
 func (c testPacketConn) SetReadDeadline(t time.Time) error { return nil }
 func (c testPacketConn) SetTTL(t int)                      {}
+func (c testPacketConn) SetIfaceIndex(t int)               {}
 
 func (c testPacketConn) ReadFrom(b []byte) (n int, ttl int, src net.Addr, err error) {
 	return 0, 0, nil, nil
