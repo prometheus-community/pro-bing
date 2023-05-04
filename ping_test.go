@@ -817,3 +817,47 @@ func TestRunWithBackgroundContext(t *testing.T) {
 	}
 	AssertTrue(t, stats.PacketsRecv == 10)
 }
+
+func TestCalculateTimeout(t *testing.T) {
+	tests := []struct {
+		name           string
+		count          int
+		interval       time.Duration
+		packetTimeout  time.Duration
+		requestTimeout time.Duration
+		want           time.Duration
+	}{
+		{
+			name:           "Test Continuous Ping",
+			count:          -1,
+			interval:       1 * time.Second,
+			packetTimeout:  2 * time.Second,
+			requestTimeout: time.Duration(1<<63 - 1),
+			want:           time.Duration(1<<63 - 1),
+		},
+		{
+			name:           "Test Packet Timeout Greater Than Request Timeout",
+			count:          5,
+			interval:       500 * time.Millisecond,
+			packetTimeout:  3 * time.Second,
+			requestTimeout: 2 * time.Second,
+			want:           2 * time.Second,
+		},
+		{
+			name:           "Test Packet Timeout Less Than Request Timeout",
+			count:          5,
+			interval:       500 * time.Millisecond,
+			packetTimeout:  2 * time.Second,
+			requestTimeout: 5 * time.Second,
+			want:           2*time.Second + 2*time.Second + 100*time.Millisecond,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := calculateTimeout(tt.count, tt.interval, tt.packetTimeout, tt.requestTimeout); got != tt.want {
+				t.Errorf("calculateTimeout() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

@@ -38,6 +38,7 @@ Examples:
 
 func main() {
 	timeout := flag.Duration("t", time.Second*100000, "")
+	packetTimeout := flag.Duration("p", 0, "")
 	interval := flag.Duration("i", time.Second, "")
 	count := flag.Int("c", -1, "")
 	size := flag.Int("s", 24, "")
@@ -89,6 +90,7 @@ func main() {
 	pinger.Size = *size
 	pinger.Interval = *interval
 	pinger.Timeout = *timeout
+	pinger.PacketTimeout = *packetTimeout
 	pinger.TTL = *ttl
 	pinger.SetPrivileged(*privileged)
 

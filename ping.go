@@ -95,11 +95,12 @@ func New(addr string) *Pinger {
 	var firstSequence = map[uuid.UUID]map[int]struct{}{}
 	firstSequence[firstUUID] = make(map[int]struct{})
 	return &Pinger{
-		Count:      -1,
-		Interval:   time.Second,
-		RecordRtts: true,
-		Size:       timeSliceLength + trackerLength,
-		Timeout:    time.Duration(math.MaxInt64),
+		Count:         -1,
+		Interval:      time.Second,
+		RecordRtts:    true,
+		Size:          timeSliceLength + trackerLength,
+		Timeout:       time.Duration(math.MaxInt64),
+		PacketTimeout: 1 * time.Second,
 
 		addr:              addr,
 		done:              make(chan interface{}),
@@ -129,6 +130,9 @@ type Pinger struct {
 	// Timeout specifies a timeout before ping exits, regardless of how many
 	// packets have been received.
 	Timeout time.Duration
+
+	// PacketTimeout specifies a timeout per packet.
+	PacketTimeout time.Duration
 
 	// Count tells pinger to stop after sending (and receiving) Count echo
 	// packets. If this option is not specified, pinger will operate until
@@ -286,6 +290,10 @@ type Statistics struct {
 }
 
 func (p *Pinger) updateStatistics(pkt *Packet) {
+	if pkt.Rtt >= p.PacketTimeout { // ignore packets that timeout from stats
+		return
+	}
+
 	p.statsMu.Lock()
 	defer p.statsMu.Unlock()
 
@@ -512,8 +520,9 @@ func (p *Pinger) runLoop(
 		logger = NoopLogger{}
 	}
 
-	timeout := time.NewTicker(p.Timeout)
+	timeout := time.NewTimer(calculateTimeout(p.Count, p.Interval, p.PacketTimeout, p.Timeout))
 	interval := time.NewTicker(p.Interval)
+
 	defer func() {
 		interval.Stop()
 		timeout.Stop()
@@ -553,6 +562,21 @@ func (p *Pinger) runLoop(
 			return nil
 		}
 	}
+}
+
+func calculateTimeout(count int, interval, packetTimeout, requestTimeout time.Duration) time.Duration {
+	// Handles the continuous ping case as requestTimeout is max int64 by default.
+	if count == -1 {
+		return requestTimeout
+	}
+
+	// the last packet roundtrip time + its timeout and a buffer of 100ms is the maximum time needed to collect all packets
+	pTimeout := time.Duration(count-1)*interval + packetTimeout + 100*time.Millisecond
+	if pTimeout < requestTimeout {
+		return pTimeout
+	}
+
+	return requestTimeout
 }
 
 func (p *Pinger) Stop() {
