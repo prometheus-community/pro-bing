@@ -82,6 +82,8 @@ const (
 var (
 	ipv4Proto = map[string]string{"icmp": "ip4:icmp", "udp": "udp4"}
 	ipv6Proto = map[string]string{"icmp": "ip6:ipv6-icmp", "udp": "udp6"}
+
+	ErrMarkNotSupported = errors.New("setting SO_MARK socket option is not supported on this platform")
 )
 
 // New returns a new Pinger struct pointer.
@@ -188,6 +190,9 @@ type Pinger struct {
 
 	ipaddr *net.IPAddr
 	addr   string
+
+	// mark is a SO_MARK (fwmark) set on outgoing icmp packets
+	mark uint
 
 	// trackerUUIDs is the list of UUIDs being used for sending packets.
 	trackerUUIDs []uuid.UUID
@@ -398,6 +403,16 @@ func (p *Pinger) ID() int {
 	return p.id
 }
 
+// SetMark sets a mark intended to be set on outgoing ICMP packets.
+func (p *Pinger) SetMark(m uint) {
+	p.mark = m
+}
+
+// Mark returns the mark to be set on outgoing ICMP packets.
+func (p *Pinger) Mark() uint {
+	return p.mark
+}
+
 // Run runs the pinger. This is a blocking function that will exit when it's
 // done. If Count or Interval are not specified, it will run continuously until
 // it is interrupted.
@@ -424,6 +439,12 @@ func (p *Pinger) RunWithContext(ctx context.Context) error {
 		return err
 	}
 	defer conn.Close()
+
+	if p.mark != 0 {
+		if err := conn.SetMark(p.mark); err != nil {
+			return fmt.Errorf("error setting mark: %v", err)
+		}
+	}
 
 	conn.SetTTL(p.TTL)
 	return p.run(ctx, conn)

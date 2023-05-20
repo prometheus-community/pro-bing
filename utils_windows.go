@@ -23,3 +23,21 @@ func (p *Pinger) matchID(ID int) bool {
 	}
 	return true
 }
+
+// SetMark sets the SO_MARK socket option on outgoing ICMP packets.
+// Setting this option requires CAP_NET_ADMIN.
+func (c *icmpConn) SetMark(mark uint) error {
+	return ErrMarkNotSupported
+}
+
+// SetMark sets the SO_MARK socket option on outgoing ICMP packets.
+// Setting this option requires CAP_NET_ADMIN.
+func (c *icmpv4Conn) SetMark(mark uint) error {
+	return ErrMarkNotSupported
+}
+
+// SetMark sets the SO_MARK socket option on outgoing ICMP packets.
+// Setting this option requires CAP_NET_ADMIN.
+func (c *icmpV6Conn) SetMark(mark uint) error {
+	return ErrMarkNotSupported
+}
