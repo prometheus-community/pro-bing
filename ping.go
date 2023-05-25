@@ -199,6 +199,9 @@ type Pinger struct {
 	// df when true sets the do-not-fragment bit in the outer IP or IPv6 header
 	df bool
 
+	// abortOnErr when true signals that any error sending or receiving should exit the run loop
+	abortOnErr bool
+
 	// trackerUUIDs is the list of UUIDs being used for sending packets.
 	trackerUUIDs []uuid.UUID
 
@@ -423,6 +426,13 @@ func (p *Pinger) SetDoNotFragment(df bool) {
 	p.df = df
 }
 
+// SetAbortOnError configures the pinger to abort the run loop upon encountering an error.
+// Default behavior is to log the error and continue execution emulating the behavior of
+// the ping utility.
+func (p *Pinger) SetAbortOnError(v bool) {
+	p.abortOnErr = v
+}
+
 // Run runs the pinger. This is a blocking function that will exit when it's
 // done. If Count or Interval are not specified, it will run continuously until
 // it is interrupted.
@@ -507,6 +517,11 @@ func (p *Pinger) runLoop(
 	conn packetConn,
 	recvCh <-chan *packet,
 ) error {
+	logger := p.logger
+	if logger == nil {
+		logger = NoopLogger{}
+	}
+
 	timeout := time.NewTicker(p.Timeout)
 	interval := time.NewTicker(p.Interval)
 	defer func() {
@@ -529,7 +544,11 @@ func (p *Pinger) runLoop(
 		case r := <-recvCh:
 			err := p.processPacket(r)
 			if err != nil {
-				return fmt.Errorf("error processing received packet: %w", err)
+				if p.abortOnErr {
+					return fmt.Errorf("error processing received packet: %w", err)
+				}
+				// FIXME: this logs as FATAL but continues
+				logger.Fatalf("processing received packet: %s", err)
 			}
 
 		case <-interval.C:
@@ -539,7 +558,11 @@ func (p *Pinger) runLoop(
 			}
 			err := p.sendICMP(conn)
 			if err != nil {
-				return fmt.Errorf("error sending packet: %w", err)
+				if p.abortOnErr {
+					return fmt.Errorf("error sending packet: %w", err)
+				}
+				// FIXME: this logs as FATAL but continues
+				logger.Fatalf("sending packet: %s", err)
 			}
 		}
 		if p.Count > 0 && p.PacketsRecv >= p.Count {
