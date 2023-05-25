@@ -507,11 +507,6 @@ func (p *Pinger) runLoop(
 	conn packetConn,
 	recvCh <-chan *packet,
 ) error {
-	logger := p.logger
-	if logger == nil {
-		logger = NoopLogger{}
-	}
-
 	timeout := time.NewTicker(p.Timeout)
 	interval := time.NewTicker(p.Interval)
 	defer func() {
@@ -534,8 +529,7 @@ func (p *Pinger) runLoop(
 		case r := <-recvCh:
 			err := p.processPacket(r)
 			if err != nil {
-				// FIXME: this logs as FATAL but continues
-				logger.Fatalf("processing received packet: %s", err)
+				return fmt.Errorf("error processing received packet: %w", err)
 			}
 
 		case <-interval.C:
@@ -545,8 +539,7 @@ func (p *Pinger) runLoop(
 			}
 			err := p.sendICMP(conn)
 			if err != nil {
-				// FIXME: this logs as FATAL but continues
-				logger.Fatalf("sending packet: %s", err)
+				return fmt.Errorf("error sending packet: %w", err)
 			}
 		}
 		if p.Count > 0 && p.PacketsRecv >= p.Count {
