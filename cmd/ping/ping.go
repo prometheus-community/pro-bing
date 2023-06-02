@@ -71,8 +71,13 @@ func main() {
 	}()
 
 	pinger.OnRecv = func(pkt *probing.Packet) {
-		fmt.Printf("%d bytes from %s: icmp_seq=%d time=%v ttl=%v\n",
-			pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt, pkt.TTL)
+		if pkt.Rtt > *packetTimeout {
+			fmt.Printf("%d bytes from %s: icmp_seq=%d time=%v ttl=%v <timed out>\n",
+				pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt, pkt.TTL)
+		} else {
+			fmt.Printf("%d bytes from %s: icmp_seq=%d time=%v ttl=%v\n",
+				pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt, pkt.TTL)
+		}
 	}
 	pinger.OnDuplicateRecv = func(pkt *probing.Packet) {
 		fmt.Printf("%d bytes from %s: icmp_seq=%d time=%v ttl=%v (DUP!)\n",
