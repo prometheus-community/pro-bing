@@ -92,24 +92,22 @@ var (
 func New(addr string) *Pinger {
 	r := rand.New(rand.NewSource(getSeed()))
 	firstUUID := uuid.New()
-	var firstSequence = map[uuid.UUID]map[int]struct{}{}
-	firstSequence[firstUUID] = make(map[int]struct{})
 	return &Pinger{
 		Count:      -1,
 		Interval:   time.Second,
 		RecordRtts: true,
 		Size:       timeSliceLength + trackerLength,
 		Timeout:    time.Duration(math.MaxInt64),
+		MaxRtt:     time.Duration(math.MaxInt64),
 
 		addr:              addr,
 		done:              make(chan interface{}),
 		id:                r.Intn(math.MaxUint16),
-		trackerUUIDs:      []uuid.UUID{firstUUID},
 		ipaddr:            nil,
 		ipv4:              false,
 		network:           "ip",
 		protocol:          "udp",
-		awaitingSequences: firstSequence,
+		awaitingSequences: newSeqMap(firstUUID),
 		TTL:               64,
 		logger:            StdLogger{Logger: log.New(log.Writer(), log.Prefix(), log.Flags())},
 	}
@@ -129,6 +127,9 @@ type Pinger struct {
 	// Timeout specifies a timeout before ping exits, regardless of how many
 	// packets have been received.
 	Timeout time.Duration
+	// MaxRtt If no response is received after this time, OnTimeout is called
+	// important! This option is not guaranteed. and if we receive the packet that was timeout, the function OnDuplicateRecv will be called
+	MaxRtt time.Duration
 
 	// Count tells pinger to stop after sending (and receiving) Count echo
 	// packets. If this option is not specified, pinger will operate until
@@ -183,6 +184,8 @@ type Pinger struct {
 	// OnRecvError is called when an error occurs while Pinger attempts to receive a packet
 	OnRecvError func(error)
 
+	// OnTimeOut is called when a packet don't have received after MaxRtt.
+	OnTimeOut func(*Packet)
 	// Size of packet being sent
 	Size int
 
@@ -205,14 +208,11 @@ type Pinger struct {
 	// df when true sets the do-not-fragment bit in the outer IP or IPv6 header
 	df bool
 
-	// trackerUUIDs is the list of UUIDs being used for sending packets.
-	trackerUUIDs []uuid.UUID
-
 	ipv4     bool
 	id       int
 	sequence int
 	// awaitingSequences are in-flight sequence numbers we keep track of to help remove duplicate receipts
-	awaitingSequences map[uuid.UUID]map[int]struct{}
+	awaitingSequences seqMap
 	// network is one of "ip", "ip4", or "ip6".
 	network string
 	// protocol is "icmp" or "udp".
@@ -520,9 +520,12 @@ func (p *Pinger) runLoop(
 
 	timeout := time.NewTicker(p.Timeout)
 	interval := time.NewTicker(p.Interval)
+	packetTimeout := time.NewTimer(time.Duration(math.MaxInt64))
+	skip := false
 	defer func() {
 		interval.Stop()
 		timeout.Stop()
+		packetTimeout.Stop()
 	}()
 
 	if err := p.sendICMP(conn); err != nil {
@@ -530,10 +533,35 @@ func (p *Pinger) runLoop(
 	}
 
 	for {
+		if !skip && !packetTimeout.Stop() {
+			<-packetTimeout.C
+		}
+		skip = false
+		first := p.awaitingSequences.peekFirst()
+		if first != nil {
+			packetTimeout.Reset(time.Until(first.time.Add(p.MaxRtt)))
+		} else {
+			packetTimeout.Reset(time.Duration(math.MaxInt64))
+		}
+
 		select {
 		case <-p.done:
 			return nil
 
+		case <-packetTimeout.C:
+			skip = true
+			p.awaitingSequences.removeElem(first)
+			if p.OnTimeOut != nil {
+				inPkt := &Packet{
+					IPAddr: p.ipaddr,
+					Addr:   p.addr,
+					Rtt:    p.MaxRtt,
+					Seq:    first.seq,
+					TTL:    -1,
+					ID:     p.id,
+				}
+				p.OnTimeOut(inPkt)
+			}
 		case <-timeout.C:
 			return nil
 
@@ -680,18 +708,15 @@ func (p *Pinger) getPacketUUID(pkt []byte) (*uuid.UUID, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error decoding tracking UUID: %w", err)
 	}
-
-	for _, item := range p.trackerUUIDs {
-		if item == packetUUID {
-			return &packetUUID, nil
-		}
+	if p.awaitingSequences.checkUUIDExist(packetUUID) {
+		return &packetUUID, nil
 	}
 	return nil, nil
 }
 
 // getCurrentTrackerUUID grabs the latest tracker UUID.
 func (p *Pinger) getCurrentTrackerUUID() uuid.UUID {
-	return p.trackerUUIDs[len(p.trackerUUIDs)-1]
+	return p.awaitingSequences.getCurUUID()
 }
 
 func (p *Pinger) processPacket(recv *packet) error {
@@ -744,7 +769,8 @@ func (p *Pinger) processPacket(recv *packet) error {
 		inPkt.Rtt = receivedAt.Sub(timestamp)
 		inPkt.Seq = pkt.Seq
 		// If we've already received this sequence, ignore it.
-		if _, inflight := p.awaitingSequences[*pktUUID][pkt.Seq]; !inflight {
+		e, inflight := p.awaitingSequences.getElem(*pktUUID, pkt.Seq)
+		if !inflight {
 			p.PacketsRecvDuplicates++
 			if p.OnDuplicateRecv != nil {
 				p.OnDuplicateRecv(inPkt)
@@ -752,7 +778,7 @@ func (p *Pinger) processPacket(recv *packet) error {
 			return nil
 		}
 		// remove it from the list of sequences we're waiting for so we don't get duplicates.
-		delete(p.awaitingSequences[*pktUUID], pkt.Seq)
+		p.awaitingSequences.removeElem(e)
 		p.updateStatistics(inPkt)
 	default:
 		// Very bad, not sure how this can happen
@@ -777,7 +803,8 @@ func (p *Pinger) sendICMP(conn packetConn) error {
 	if err != nil {
 		return fmt.Errorf("unable to marshal UUID binary: %w", err)
 	}
-	t := append(timeToBytes(time.Now()), uuidEncoded...)
+	now := time.Now()
+	t := append(timeToBytes(now), uuidEncoded...)
 	if remainSize := p.Size - timeSliceLength - trackerLength; remainSize > 0 {
 		t = append(t, bytes.Repeat([]byte{1}, remainSize)...)
 	}
@@ -829,13 +856,12 @@ func (p *Pinger) sendICMP(conn packetConn) error {
 			p.OnSend(outPkt)
 		}
 		// mark this sequence as in-flight
-		p.awaitingSequences[currentUUID][p.sequence] = struct{}{}
+		p.awaitingSequences.putElem(currentUUID, p.sequence, now)
 		p.PacketsSent++
 		p.sequence++
 		if p.sequence > 65535 {
 			newUUID := uuid.New()
-			p.trackerUUIDs = append(p.trackerUUIDs, newUUID)
-			p.awaitingSequences[newUUID] = make(map[int]struct{})
+			p.awaitingSequences.newSeqMap(newUUID)
 			p.sequence = 0
 		}
 		break
