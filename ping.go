@@ -475,8 +475,8 @@ func (p *Pinger) run(ctx context.Context, conn packetConn) error {
 	recv := make(chan *packet, 5)
 	defer close(recv)
 
-	if handler := p.OnSetup; handler != nil {
-		handler()
+	if p.OnSetup != nil {
+		p.OnSetup()
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -571,10 +571,8 @@ func (p *Pinger) Stop() {
 }
 
 func (p *Pinger) finish() {
-	handler := p.OnFinish
-	if handler != nil {
-		s := p.Statistics()
-		handler(s)
+	if p.OnFinish != nil {
+		p.OnFinish(p.Statistics())
 	}
 }
 
@@ -752,9 +750,8 @@ func (p *Pinger) processPacket(recv *packet) error {
 		return fmt.Errorf("invalid ICMP echo reply; type: '%T', '%v'", pkt, pkt)
 	}
 
-	handler := p.OnRecv
-	if handler != nil {
-		handler(inPkt)
+	if p.OnRecv != nil {
+		p.OnRecv(inPkt)
 	}
 
 	return nil
@@ -802,8 +799,7 @@ func (p *Pinger) sendICMP(conn packetConn) error {
 			}
 			return err
 		}
-		handler := p.OnSend
-		if handler != nil {
+		if p.OnSend != nil {
 			outPkt := &Packet{
 				Nbytes: len(msgBytes),
 				IPAddr: p.ipaddr,
@@ -811,7 +807,7 @@ func (p *Pinger) sendICMP(conn packetConn) error {
 				Seq:    p.sequence,
 				ID:     p.id,
 			}
-			handler(outPkt)
+			p.OnSend(outPkt)
 		}
 		// mark this sequence as in-flight
 		p.awaitingSequences[currentUUID][p.sequence] = struct{}{}
