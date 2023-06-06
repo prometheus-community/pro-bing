@@ -651,8 +651,8 @@ func (p *Pinger) recvICMP(
 			var err error
 			n, ttl, _, err = conn.ReadFrom(bytes)
 			if err != nil {
-				if handler := p.OnRecvError; handler != nil {
-					handler(err)
+				if p.OnRecvError != nil {
+					p.OnRecvError(err)
 				}
 				if neterr, ok := err.(*net.OpError); ok {
 					if neterr.Timeout() {
@@ -801,7 +801,7 @@ func (p *Pinger) sendICMP(conn packetConn) error {
 
 	for {
 		if _, err := conn.WriteTo(msgBytes, dst); err != nil {
-			if handler := p.OnSendError; handler != nil {
+			if p.OnSendError != nil {
 				outPkt := &Packet{
 					Nbytes: len(msgBytes),
 					IPAddr: p.ipaddr,
@@ -809,7 +809,7 @@ func (p *Pinger) sendICMP(conn packetConn) error {
 					Seq:    p.sequence,
 					ID:     p.id,
 				}
-				handler(outPkt, err)
+				p.OnSendError(outPkt, err)
 			}
 			if neterr, ok := err.(*net.OpError); ok {
 				if neterr.Err == syscall.ENOBUFS {
