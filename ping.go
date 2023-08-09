@@ -360,7 +360,7 @@ func (p *Pinger) Resolve() error {
 			return err
 		}
 		if len(ips) == 0 {
-			return fmt.Errorf("lookup %s failed: ip not found", p.addr)
+			return fmt.Errorf("lookup %s failed: no addresses found", p.addr)
 		}
 		ipaddr = &net.IPAddr{IP: ips[0]}
 		for _, ip := range ips {
