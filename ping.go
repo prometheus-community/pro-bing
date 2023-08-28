@@ -92,7 +92,7 @@ var (
 func New(addr string) *Pinger {
 	r := rand.New(rand.NewSource(getSeed()))
 	firstUUID := uuid.New()
-	var firstSequence = map[uuid.UUID]map[int]struct{}{}
+	firstSequence := map[uuid.UUID]map[int]struct{}{}
 	firstSequence[firstUUID] = make(map[int]struct{})
 	return &Pinger{
 		Count:      -1,
@@ -191,6 +191,9 @@ type Pinger struct {
 
 	// Source is the source IP address
 	Source string
+
+	// Interface used to send/recv ICMP messages
+	Interface string
 
 	// Channel and mutex used to communicate when the Pinger should stop between goroutines.
 	done chan interface{}
@@ -469,6 +472,15 @@ func (p *Pinger) RunWithContext(ctx context.Context) error {
 	}
 
 	conn.SetTTL(p.TTL)
+
+	if p.Interface != "" {
+		iface, err := net.InterfaceByName(p.Interface)
+		if err != nil {
+			return err
+		}
+		conn.SetIfIndex(iface.Index)
+	}
+
 	return p.run(ctx, conn)
 }
 
