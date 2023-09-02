@@ -227,6 +227,7 @@ type packet struct {
 	bytes  []byte
 	nbytes int
 	ttl    int
+	addr   net.Addr
 }
 
 // Packet represents a received and processed ICMP echo packet.
@@ -653,9 +654,7 @@ func (p *Pinger) recvICMP(
 			if err := conn.SetReadDeadline(time.Now().Add(delay)); err != nil {
 				return err
 			}
-			var n, ttl int
-			var err error
-			n, ttl, _, err = conn.ReadFrom(bytes)
+			n, ttl, addr, err := conn.ReadFrom(bytes)
 			if err != nil {
 				if p.OnRecvError != nil {
 					p.OnRecvError(err)
@@ -673,7 +672,7 @@ func (p *Pinger) recvICMP(
 			select {
 			case <-p.done:
 				return nil
-			case recv <- &packet{bytes: bytes, nbytes: n, ttl: ttl}:
+			case recv <- &packet{bytes: bytes, nbytes: n, ttl: ttl, addr: addr}:
 			}
 		}
 	}
@@ -722,10 +721,24 @@ func (p *Pinger) processPacket(recv *packet) error {
 		return nil
 	}
 
+	// If initial ip is a broadcast ip, ping responses will come from machines' in the
+	// subnet, thus ip will differ. Below gets real ip from received package.
+	var realIP *net.IPAddr
+
+	switch v := recv.addr.(type) {
+	case *net.IPAddr: // For ICMP
+		realIP = v
+	case *net.UDPAddr:
+		realIP = &net.IPAddr{IP: v.IP}
+	default:
+		p.logger.Infof("received address: %s it neither an Ip address (ICMP) nor UDP address, shouldn't happen. using initial address", recv.addr)
+		realIP = p.ipaddr
+	}
+
 	inPkt := &Packet{
 		Nbytes: recv.nbytes,
-		IPAddr: p.ipaddr,
-		Addr:   p.addr,
+		IPAddr: realIP,
+		Addr:   realIP.String(),
 		TTL:    recv.ttl,
 		ID:     p.id,
 	}
