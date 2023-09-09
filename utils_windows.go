@@ -56,3 +56,16 @@ func (c *icmpv4Conn) SetDoNotFragment() error {
 func (c *icmpV6Conn) SetDoNotFragment() error {
 	return ErrDFNotSupported
 }
+
+// No need for SetBroadcastFlag in non-linux OSes
+func (c *icmpConn) SetBroadcastFlag() error {
+	return nil
+}
+
+func (c *icmpv4Conn) SetBroadcastFlag() error {
+	return nil
+}
+
+func (c *icmpV6Conn) SetBroadcastFlag() error {
+	return nil
+}

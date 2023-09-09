@@ -20,6 +20,7 @@ type packetConn interface {
 	SetTTL(ttl int)
 	SetMark(m uint) error
 	SetDoNotFragment() error
+	SetBroadcastFlag() error
 }
 
 type icmpConn struct {

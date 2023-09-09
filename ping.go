@@ -820,6 +820,14 @@ func (p *Pinger) sendICMP(conn packetConn) error {
 
 	for {
 		if _, err := conn.WriteTo(msgBytes, dst); err != nil {
+			// Try to set broadcast flag
+			if errors.Is(err, syscall.EACCES) && runtime.GOOS == "linux" {
+				if e := conn.SetBroadcastFlag(); e != nil {
+					p.logger.Warnf("had EACCES syscall error, check your local firewall")
+				}
+				p.logger.Infof("Pinging a broadcast address")
+				continue
+			}
 			if p.OnSendError != nil {
 				outPkt := &Packet{
 					Nbytes: len(msgBytes),

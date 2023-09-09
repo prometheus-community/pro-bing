@@ -101,6 +101,42 @@ func (c *icmpV6Conn) SetDoNotFragment() error {
 	)
 }
 
+func (c *icmpConn) SetBroadcastFlag() error {
+	fd, err := getFD(c.c)
+	if err != nil {
+		return err
+	}
+
+	return os.NewSyscallError(
+		"setsockopt",
+		syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_BROADCAST, 1),
+	)
+}
+
+func (c *icmpv4Conn) SetBroadcastFlag() error {
+	fd, err := getFD(c.icmpConn.c)
+	if err != nil {
+		return err
+	}
+
+	return os.NewSyscallError(
+		"setsockopt",
+		syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_BROADCAST, 1),
+	)
+}
+
+func (c *icmpV6Conn) SetBroadcastFlag() error {
+	fd, err := getFD(c.icmpConn.c)
+	if err != nil {
+		return err
+	}
+
+	return os.NewSyscallError(
+		"setsockopt",
+		syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_BROADCAST, 1),
+	)
+}
+
 // getFD gets the system file descriptor for an icmp.PacketConn
 func getFD(c *icmp.PacketConn) (uintptr, error) {
 	v := reflect.ValueOf(c).Elem().FieldByName("c").Elem()
