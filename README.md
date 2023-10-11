@@ -44,10 +44,10 @@ pinger.OnRecv = func(pkt *probing.Packet) {
 
 pinger.OnDuplicateRecv = func(pkt *probing.Packet) {
 	fmt.Printf("%d bytes from %s: icmp_seq=%d time=%v ttl=%v (DUP!)\n",
-		pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt, pkt.Ttl)
+		pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt, pkt.TTL)
 }
 
-pinger.OnFinish = func(stats *ping.Statistics) {
+pinger.OnFinish = func(stats *probing.Statistics) {
 	fmt.Printf("\n--- %s ping statistics ---\n", stats.Addr)
 	fmt.Printf("%d packets transmitted, %d packets received, %v%% packet loss\n",
 		stats.PacketsSent, stats.PacketsRecv, stats.PacketLoss)
