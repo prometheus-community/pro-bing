@@ -213,6 +213,7 @@ type Pinger struct {
 	sequence int
 	// awaitingSequences are in-flight sequence numbers we keep track of to help remove duplicate receipts
 	awaitingSequences map[uuid.UUID]map[int]struct{}
+	asMu              sync.Mutex
 	// network is one of "ip", "ip4", or "ip6".
 	network string
 	// protocol is "icmp" or "udp".
@@ -749,6 +750,10 @@ func (p *Pinger) processPacket(recv *packet) error {
 		timestamp := bytesToTime(pkt.Data[:timeSliceLength])
 		inPkt.Rtt = receivedAt.Sub(timestamp)
 		inPkt.Seq = pkt.Seq
+
+		p.asMu.Lock()
+		defer p.asMu.Unlock()
+
 		// If we've already received this sequence, ignore it.
 		if _, inflight := p.awaitingSequences[*pktUUID][pkt.Seq]; !inflight {
 			p.PacketsRecvDuplicates++
@@ -835,6 +840,9 @@ func (p *Pinger) sendICMP(conn packetConn) error {
 			p.OnSend(outPkt)
 		}
 		// mark this sequence as in-flight
+		p.asMu.Lock()
+		defer p.asMu.Unlock()
+
 		p.awaitingSequences[currentUUID][p.sequence] = struct{}{}
 		p.PacketsSent++
 		p.sequence++
