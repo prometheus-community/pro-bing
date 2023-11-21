@@ -130,6 +130,9 @@ type Pinger struct {
 	// packets have been received.
 	Timeout time.Duration
 
+	// ReceiveTimeout specifies a timeout after which the packet is considered lost.
+	ReceiveTimeout time.Duration
+
 	// Count tells pinger to stop after sending (and receiving) Count echo
 	// packets. If this option is not specified, pinger will operate until
 	// interrupted.
@@ -170,6 +173,9 @@ type Pinger struct {
 
 	// OnRecv is called when Pinger receives and processes a packet
 	OnRecv func(*Packet)
+
+	// OnLost is called when a packet was lost.
+	OnLost func(*Packet)
 
 	// OnFinish is called when Pinger exits
 	OnFinish func(*Statistics)
@@ -806,15 +812,16 @@ func (p *Pinger) sendICMP(conn packetConn) error {
 	}
 
 	for {
+		outPkt := &Packet{
+			Nbytes: len(msgBytes),
+			IPAddr: p.ipaddr,
+			Addr:   p.addr,
+			Seq:    p.sequence,
+			ID:     p.id,
+		}
+
 		if _, err := conn.WriteTo(msgBytes, dst); err != nil {
 			if p.OnSendError != nil {
-				outPkt := &Packet{
-					Nbytes: len(msgBytes),
-					IPAddr: p.ipaddr,
-					Addr:   p.addr,
-					Seq:    p.sequence,
-					ID:     p.id,
-				}
 				p.OnSendError(outPkt, err)
 			}
 			if neterr, ok := err.(*net.OpError); ok {
@@ -825,17 +832,28 @@ func (p *Pinger) sendICMP(conn packetConn) error {
 			return err
 		}
 		if p.OnSend != nil {
-			outPkt := &Packet{
-				Nbytes: len(msgBytes),
-				IPAddr: p.ipaddr,
-				Addr:   p.addr,
-				Seq:    p.sequence,
-				ID:     p.id,
-			}
 			p.OnSend(outPkt)
 		}
 		// mark this sequence as in-flight
 		p.awaitingSequences[currentUUID][p.sequence] = struct{}{}
+
+		if p.OnLost != nil {
+
+			checkReceive := func(uuid uuid.UUID, pack *Packet) {
+				if _, ok := p.awaitingSequences[uuid][pack.Seq]; ok {
+					p.OnLost(pack)
+				}
+			}
+
+			newFunc := func(uuid uuid.UUID, pack *Packet) func() {
+				return func() { checkReceive(uuid, pack) }
+			}
+
+			nf := newFunc(currentUUID, outPkt)
+
+			time.AfterFunc(p.ReceiveTimeout, func() { nf() })
+		}
+
 		p.PacketsSent++
 		p.sequence++
 		if p.sequence > 65535 {

@@ -13,7 +13,7 @@ import (
 var usage = `
 Usage:
 
-    ping [-c count] [-i interval] [-t timeout] [--privileged] host
+    ping [-c count] [-i interval] [-t timeout] [-rt receiveTimeout] [--privileged] host
 
 Examples:
 
@@ -29,6 +29,9 @@ Examples:
     # ping google for 10 seconds
     ping -t 10s www.google.com
 
+	# ping google with received timeout 2 seconds
+    ping -rt 2s www.google.com
+
     # Send a privileged raw ICMP ping
     sudo ping --privileged www.google.com
 
@@ -38,6 +41,7 @@ Examples:
 
 func main() {
 	timeout := flag.Duration("t", time.Second*100000, "")
+	receiveTimeout := flag.Duration("rt", time.Second*2, "")
 	interval := flag.Duration("i", time.Second, "")
 	count := flag.Int("c", -1, "")
 	size := flag.Int("s", 24, "")
@@ -73,6 +77,10 @@ func main() {
 		fmt.Printf("%d bytes from %s: icmp_seq=%d time=%v ttl=%v\n",
 			pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt, pkt.TTL)
 	}
+	pinger.OnLost = func(pkt *probing.Packet) {
+		fmt.Printf("%d bytes to %s was lost: icmp_seq=%d\n",
+			pkt.Nbytes, pkt.IPAddr, pkt.Seq)
+	}
 	pinger.OnDuplicateRecv = func(pkt *probing.Packet) {
 		fmt.Printf("%d bytes from %s: icmp_seq=%d time=%v ttl=%v (DUP!)\n",
 			pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt, pkt.TTL)
@@ -89,6 +97,7 @@ func main() {
 	pinger.Size = *size
 	pinger.Interval = *interval
 	pinger.Timeout = *timeout
+	pinger.ReceiveTimeout = *receiveTimeout
 	pinger.TTL = *ttl
 	pinger.SetPrivileged(*privileged)
 
