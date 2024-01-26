@@ -194,14 +194,22 @@ func (s statsSet) toPublicSet() HTTPStatisticsSet {
 	}
 }
 
-func (s *statsSet) update(newVal time.Duration, count int) {
+func (s *statsSet) updateByTimePair(tp timePair) {
+	if !tp.isValid() {
+		return
+	}
+	s.count++
+	s.update(tp.getDuration())
+}
+
+func (s *statsSet) update(newVal time.Duration) {
 	if s.min == 0 || newVal < s.min {
 		s.min = newVal
 	}
 	if newVal > s.max {
 		s.max = newVal
 	}
-	s.stdDev, s.stdDevM2, s.avg = calculateStdDev(count, newVal, s.avg, s.stdDevM2)
+	s.stdDev, s.stdDevM2, s.avg = calculateStdDev(s.count, newVal, s.avg, s.stdDevM2)
 }
 
 func (c *HTTPCaller) Stop() {
@@ -272,56 +280,87 @@ func (c *HTTPCaller) runCallers(ctx context.Context) {
 	}
 }
 
+type timePair struct {
+	start time.Time
+	end   time.Time
+}
+
+func (p timePair) isValid() bool {
+	return !p.start.IsZero() && !p.end.IsZero()
+}
+
+func (p timePair) getDuration() time.Duration {
+	return p.end.Sub(p.start)
+}
+
+type callStatTimers struct {
+	generalCall timePair
+	dns         timePair
+	conn        timePair
+	tls         timePair
+	pureCall    timePair
+}
+
+func getClientTrace(timers *callStatTimers) *httptrace.ClientTrace {
+	return &httptrace.ClientTrace{
+		DNSStart: func(info httptrace.DNSStartInfo) {
+			timers.dns.start = time.Now()
+		},
+		DNSDone: func(info httptrace.DNSDoneInfo) {
+			timers.dns.end = time.Now()
+		},
+		ConnectStart: func(network, addr string) {
+			timers.conn.start = time.Now()
+		},
+		ConnectDone: func(network, addr string, err error) {
+			timers.conn.end = time.Now()
+		},
+		TLSHandshakeStart: func() {
+			timers.tls.start = time.Now()
+		},
+		TLSHandshakeDone: func(state tls.ConnectionState, err error) {
+			timers.tls.end = time.Now()
+		},
+		WroteHeaders: func() {
+			timers.pureCall.start = time.Now()
+		},
+		GotFirstResponseByte: func() {
+			timers.pureCall.end = time.Now()
+		},
+	}
+}
+
+func (c *HTTPCaller) addStats(statusCode int, isValidResponse bool, timers callStatTimers) {
+	// TODO: channels?
+	c.statsMu.Lock()
+	defer c.statsMu.Unlock()
+
+	c.statusCodesCount[statusCode]++
+	if isValidResponse {
+		c.validResponsesCount++
+	}
+	c.totalLatency.updateByTimePair(timers.generalCall)
+	c.dnsLatency.updateByTimePair(timers.dns)
+	c.connLatency.updateByTimePair(timers.conn)
+	c.tlsLatency.updateByTimePair(timers.tls)
+	c.pureCallLatency.updateByTimePair(timers.pureCall)
+}
+
 // TODO: check http client effective lifehacks
 func (c *HTTPCaller) makeCall(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	var (
-		dnsStart                time.Time
-		dnsDone                 time.Time
-		connStart               time.Time
-		connDone                time.Time
-		tlsStart                time.Time
-		tlsDone                 time.Time
-		requestHeadersWriteDone time.Time
-		responseFirstByteDone   time.Time
-	)
+	statTimers := callStatTimers{}
+	trace := getClientTrace(&statTimers)
 
-	trace := httptrace.ClientTrace{
-		DNSStart: func(info httptrace.DNSStartInfo) {
-			dnsStart = time.Now()
-		},
-		DNSDone: func(info httptrace.DNSDoneInfo) {
-			dnsStart = time.Now()
-		},
-		ConnectStart: func(network, addr string) {
-			connStart = time.Now()
-		},
-		ConnectDone: func(network, addr string, err error) {
-			connDone = time.Now()
-		},
-		TLSHandshakeStart: func() {
-			tlsStart = time.Now()
-		},
-		TLSHandshakeDone: func(state tls.ConnectionState, err error) {
-			tlsDone = time.Now()
-		},
-		WroteHeaders: func() {
-			requestHeadersWriteDone = time.Now()
-		},
-		GotFirstResponseByte: func() {
-			responseFirstByteDone = time.Now()
-		},
-	}
-
-	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, &trace), c.method, c.url, bytes.NewReader(c.body))
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), c.method, c.url, bytes.NewReader(c.body))
 	if err != nil {
 		return err // TODO: wrap
 	}
 	req.Header = c.headers
 
-	requestTime := time.Now()
+	statTimers.generalCall.start = time.Now()
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
@@ -331,52 +370,14 @@ func (c *HTTPCaller) makeCall(ctx context.Context) error {
 		return err // TODO: wrap
 	}
 	resp.Body.Close() // TODO: err?
-	responseTime := time.Now()
-	totalLatency := responseTime.Sub(requestTime)
+	statTimers.generalCall.end = time.Now()
 	isValidResponse := true
 	if c.isValidResponse != nil {
 		isValidResponse = c.isValidResponse(resp, body)
 	}
-
-	// TODO: channels?
-	c.statsMu.Lock()
-	defer c.statsMu.Unlock()
-	c.statusCodesCount[resp.StatusCode]++
-	if isValidResponse {
-		c.validResponsesCount++
-	}
-	c.totalLatency.count++
-	c.totalLatency.update(totalLatency, c.totalLatency.count)
-	if !dnsStart.IsZero() && !dnsDone.IsZero() {
-		c.dnsLatency.count++
-		c.dnsLatency.update(dnsDone.Sub(dnsStart), c.dnsLatency.count)
-	}
-	if !connStart.IsZero() && !connDone.IsZero() {
-		c.connLatency.count++
-		c.connLatency.update(connDone.Sub(connStart), c.connLatency.count)
-	}
-	if !tlsStart.IsZero() && !tlsDone.IsZero() {
-		c.tlsLatency.count++
-		c.tlsLatency.update(tlsDone.Sub(tlsStart), c.tlsLatency.count)
-	}
-	c.pureCallLatency.count++ // technically obsolete, keeping for the same style
-	c.pureCallLatency.update(responseFirstByteDone.Sub(requestHeadersWriteDone), c.pureCallLatency.count)
-
+	c.addStats(resp.StatusCode, isValidResponse, statTimers)
 	if c.onResp != nil {
-		c.onResp(&HTTPCallInfo{
-			RequestTime:                   requestTime,
-			ResponseTime:                  responseTime,
-			DNSStartTime:                  dnsStart,
-			DNSDoneTime:                   dnsDone,
-			ConnStartTime:                 connStart,
-			ConnDoneTime:                  connDone,
-			TLSStartTime:                  tlsStart,
-			RequestHeadersWrittenTime:     requestHeadersWriteDone,
-			ResponseFirstByteReceivedTime: responseFirstByteDone,
-
-			StatusCode:      resp.StatusCode,
-			IsValidResponse: isValidResponse,
-		})
+		c.onResp(formHTTPCallInfo(resp.StatusCode, isValidResponse, statTimers))
 	}
 	return nil
 }
@@ -411,6 +412,7 @@ type HTTPCallInfo struct {
 	ConnStartTime                 time.Time
 	ConnDoneTime                  time.Time
 	TLSStartTime                  time.Time
+	TLSEndTime                    time.Time
 	RequestHeadersWrittenTime     time.Time
 	ResponseFirstByteReceivedTime time.Time
 
@@ -429,6 +431,24 @@ type HTTPStatistics struct {
 	ConnLatency     HTTPStatisticsSet
 	TLSLatency      HTTPStatisticsSet
 	PureCallLatency HTTPStatisticsSet // TODO: think about name
+}
+
+func formHTTPCallInfo(statusCode int, isValidResponse bool, statTimers callStatTimers) *HTTPCallInfo {
+	return &HTTPCallInfo{
+		RequestTime:                   statTimers.generalCall.start,
+		ResponseTime:                  statTimers.generalCall.end,
+		DNSStartTime:                  statTimers.dns.start,
+		DNSDoneTime:                   statTimers.dns.end,
+		ConnStartTime:                 statTimers.conn.start,
+		ConnDoneTime:                  statTimers.conn.end,
+		TLSStartTime:                  statTimers.tls.start,
+		TLSEndTime:                    statTimers.tls.end,
+		RequestHeadersWrittenTime:     statTimers.pureCall.start,
+		ResponseFirstByteReceivedTime: statTimers.pureCall.end,
+
+		StatusCode:      statusCode,
+		IsValidResponse: isValidResponse,
+	}
 }
 
 type HTTPStatisticsSet struct {
