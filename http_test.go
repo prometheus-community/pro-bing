@@ -288,6 +288,7 @@ func TestHTTPCaller_RunWithContext(t *testing.T) {
 		t.Errorf("Timed out on a shutdown, meaning workload wasn't processed, Stack: \n%s", string(debug.Stack()))
 	case <-done:
 	}
+	httpCaller.Stop()
 	AssertIntGreaterOrEqual(t, callsCount, 5)
 }
 
