@@ -31,8 +31,16 @@ type httpCallerOptions struct {
 
 	isValidResponse func(response *http.Response, body []byte) bool
 
-	onResp   func(*HTTPCallInfo)
-	onFinish func(*HTTPStatistics)
+	onDNSStart          func(suite *TraceSuite, info httptrace.DNSStartInfo)
+	onDNSDone           func(suite *TraceSuite, info httptrace.DNSDoneInfo)
+	onConnStart         func(suite *TraceSuite, network, addr string)
+	onConnDone          func(suite *TraceSuite, network, addr string, err error)
+	onTLSStart          func(suite *TraceSuite)
+	onTLSDone           func(suite *TraceSuite, state tls.ConnectionState, err error)
+	onWroteHeaders      func(suite *TraceSuite)
+	onFirstByteReceived func(suite *TraceSuite)
+	onReq               func(suite *TraceSuite)
+	onResp              func(suite *TraceSuite, info *HTTPCallInfo)
 
 	logger Logger
 }
@@ -40,14 +48,14 @@ type httpCallerOptions struct {
 // HTTPCallerOption represents a function type for a functional parameter passed to a NewHttpCaller constructor.
 type HTTPCallerOption func(options *httpCallerOptions)
 
-// WithHTTPCallerClient is a functional parameter for a WithHTTPCallerClient which specifies a http.Client.
+// WithHTTPCallerClient is a functional parameter for a HTTPCaller which specifies a http.Client.
 func WithHTTPCallerClient(client *http.Client) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.client = client
 	}
 }
 
-// WithHTTPCallerTargetRPS is a functional parameter for a WithHTTPCallerClient which specifies a rps. If this option
+// WithHTTPCallerTargetRPS is a functional parameter for a HTTPCaller which specifies a rps. If this option
 // is not provided the default one will be used. You can check default value in const defaultHTTPTargetRPS.
 func WithHTTPCallerTargetRPS(rps int) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
@@ -55,7 +63,7 @@ func WithHTTPCallerTargetRPS(rps int) HTTPCallerOption {
 	}
 }
 
-// WithHTTPCallerMaxConcurrentCalls is a functional parameter for a WithHTTPCallerClient which specifies a number of
+// WithHTTPCallerMaxConcurrentCalls is a functional parameter for a HTTPCaller which specifies a number of
 // maximum concurrent calls. If this option is not provided the default one will be used. You can check default value in const
 // defaultHTTPMaxConcurrentCalls.
 func WithHTTPCallerMaxConcurrentCalls(max int) HTTPCallerOption {
@@ -64,7 +72,7 @@ func WithHTTPCallerMaxConcurrentCalls(max int) HTTPCallerOption {
 	}
 }
 
-// WithHTTPCallerHeaders is a functional parameter for a WithHTTPCallerClient which specifies headers that should be
+// WithHTTPCallerHeaders is a functional parameter for a HTTPCaller which specifies headers that should be
 // set in request.
 func WithHTTPCallerHeaders(headers http.Header) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
@@ -72,7 +80,7 @@ func WithHTTPCallerHeaders(headers http.Header) HTTPCallerOption {
 	}
 }
 
-// WithHTTPCallerMethod is a functional parameter for a WithHTTPCallerClient which specifies a method that should be
+// WithHTTPCallerMethod is a functional parameter for a HTTPCaller which specifies a method that should be
 // set in request. If this option is not provided the default one will be used. You can check default value in const
 // defaultHTTPMethod.
 func WithHTTPCallerMethod(method string) HTTPCallerOption {
@@ -81,7 +89,7 @@ func WithHTTPCallerMethod(method string) HTTPCallerOption {
 	}
 }
 
-// WithHTTPCallerBody is a functional parameter for a WithHTTPCallerClient which specifies a body that should be set
+// WithHTTPCallerBody is a functional parameter for a HTTPCaller which specifies a body that should be set
 // in request.
 func WithHTTPCallerBody(body []byte) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
@@ -89,7 +97,7 @@ func WithHTTPCallerBody(body []byte) HTTPCallerOption {
 	}
 }
 
-// WithHTTPCallerTimeout is a functional parameter for a WithHTTPCallerTimeout which specifies request timeout.
+// WithHTTPCallerTimeout is a functional parameter for a HTTPCaller which specifies request timeout.
 // If this option is not provided the default one will be used. You can check default value in const defaultTimeout.
 func WithHTTPCallerTimeout(timeout time.Duration) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
@@ -97,7 +105,7 @@ func WithHTTPCallerTimeout(timeout time.Duration) HTTPCallerOption {
 	}
 }
 
-// WithHTTPCallerIsValidResponse is a functional parameter for a WithHTTPCallerTimeout which specifies a function that
+// WithHTTPCallerIsValidResponse is a functional parameter for a HTTPCaller which specifies a function that
 // will be used to assess whether a response is valid. If not specified, all responses will be treated as valid.
 // You can read more explanation about this parameter in HTTPCaller annotation.
 func WithHTTPCallerIsValidResponse(isValid func(response *http.Response, body []byte) bool) HTTPCallerOption {
@@ -106,23 +114,91 @@ func WithHTTPCallerIsValidResponse(isValid func(response *http.Response, body []
 	}
 }
 
-// WithHTTPCallerOnResp is a functional parameter for a WithHTTPCallerTimeout which specifies a callback that will be
+// WithHTTPCallerOnDNSStart is a functional parameter for a HTTPCaller which specifies a callback that will be
+// called when dns resolving starts. You can read more explanation about this parameter in HTTPCaller annotation.
+func WithHTTPCallerOnDNSStart(onDNSStart func(suite *TraceSuite, info httptrace.DNSStartInfo)) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.onDNSStart = onDNSStart
+	}
+}
+
+// WithHTTPCallerOnDNSDone is a functional parameter for a HTTPCaller which specifies a callback that will be
+// called when dns resolving ended. You can read more explanation about this parameter in HTTPCaller annotation.
+func WithHTTPCallerOnDNSDone(onDNSDone func(suite *TraceSuite, info httptrace.DNSDoneInfo)) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.onDNSDone = onDNSDone
+	}
+}
+
+// WithHTTPCallerOnConnStart is a functional parameter for a HTTPCaller which specifies a callback that will be
+// called when connection establishment started. You can read more explanation about this parameter in HTTPCaller
+// annotation.
+func WithHTTPCallerOnConnStart(onConnStart func(suite *TraceSuite, network, addr string)) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.onConnStart = onConnStart
+	}
+}
+
+// WithHTTPCallerOnConnDone is a functional parameter for a HTTPCaller which specifies a callback that will be
+// called when connection establishment finished. You can read more explanation about this parameter in HTTPCaller
+// annotation.
+func WithHTTPCallerOnConnDone(conConnDone func(suite *TraceSuite, network, addr string, err error)) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.onConnDone = conConnDone
+	}
+}
+
+// WithHTTPCallerOnTLSStart is a functional parameter for a HTTPCaller which specifies a callback that will be
+// called when tls handshake started. You can read more explanation about this parameter in HTTPCaller annotation.
+func WithHTTPCallerOnTLSStart(onTLSStart func(suite *TraceSuite)) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.onTLSStart = onTLSStart
+	}
+}
+
+// WithHTTPCallerOnTLSDone is a functional parameter for a HTTPCaller which specifies a callback that will be
+// called when tls handshake ended. You can read more explanation about this parameter in HTTPCaller annotation.
+func WithHTTPCallerOnTLSDone(onTLSDone func(suite *TraceSuite, state tls.ConnectionState, err error)) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.onTLSDone = onTLSDone
+	}
+}
+
+// WithHTTPCallerOnWroteRequest is a functional parameter for a HTTPCaller which specifies a callback that will be
+// called when request has been written. You can read more explanation about this parameter in HTTPCaller annotation.
+func WithHTTPCallerOnWroteRequest(onWroteRequest func(suite *TraceSuite)) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.onWroteHeaders = onWroteRequest
+	}
+}
+
+// WithHTTPCallerOnGotFirstByte is a functional parameter for a HTTPCaller which specifies a callback that will be
+// called when first response byte has been received. You can read more explanation about this parameter in HTTPCaller
+// annotation.
+func WithHTTPCallerOnGotFirstByte(onGotFirstByte func(suite *TraceSuite)) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.onFirstByteReceived = onGotFirstByte
+	}
+}
+
+// WithHTTPCallerOnReq is a functional parameter for a HTTPCaller which specifies a callback that will be
+// called before the start of the http call execution. You can read more explanation about this parameter in HTTPCaller
+// annotation.
+func WithHTTPCallerOnReq(onReq func(suite *TraceSuite)) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.onReq = onReq
+	}
+}
+
+// WithHTTPCallerOnResp is a functional parameter for a HTTPCaller which specifies a callback that will be
 // called when response is received. You can read more explanation about this parameter in HTTPCaller annotation.
-func WithHTTPCallerOnResp(onResp func(*HTTPCallInfo)) HTTPCallerOption {
+func WithHTTPCallerOnResp(onResp func(suite *TraceSuite, info *HTTPCallInfo)) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.onResp = onResp
 	}
 }
 
-// WithHTTPCallerOnFinish is a functional parameter for a WithHTTPCallerTimeout which specifies a callback that will be
-// called when probing cycle is finished. You can read more explanation about this parameter in HTTPCaller annotation.
-func WithHTTPCallerOnFinish(onFinish func(statistics *HTTPStatistics)) HTTPCallerOption {
-	return func(options *httpCallerOptions) {
-		options.onFinish = onFinish
-	}
-}
-
-// WithHTTPCallerLogger is a functional parameter for a WithHTTPCallerTimeout which specifies a logger.
+// WithHTTPCallerLogger is a functional parameter for a HTTPCaller which specifies a logger.
 // If not specified, logs will be omitted.
 func WithHTTPCallerLogger(logger Logger) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
@@ -158,13 +234,19 @@ func NewHttpCaller(url string, options ...HTTPCallerOption) *HTTPCaller {
 
 		isValidResponse: opts.isValidResponse,
 
-		statusCodesCount: make(map[int]int),
-
 		workChan: make(chan struct{}, defaultHTTPMaxConcurrentCalls),
 		doneChan: make(chan struct{}),
 
-		onResp:   opts.onResp,
-		onFinish: opts.onFinish,
+		onDNSStart:          opts.onDNSStart,
+		onDNSDone:           opts.onDNSDone,
+		onConnStart:         opts.onConnStart,
+		onConnDone:          opts.onConnDone,
+		onTLSStart:          opts.onTLSStart,
+		onTLSDone:           opts.onTLSDone,
+		onWroteHeaders:      opts.onWroteHeaders,
+		onFirstByteReceived: opts.onFirstByteReceived,
+		onReq:               opts.onReq,
+		onResp:              opts.onResp,
 
 		logger: opts.logger,
 	}
@@ -174,7 +256,7 @@ func NewHttpCaller(url string, options ...HTTPCallerOption) *HTTPCaller {
 type HTTPCaller struct {
 	client *http.Client
 
-	// targetRPS is a RPS which prober will try to maintain. You might need to increase maxConcurrentCalls value to
+	// targetRPS is an RPS which prober will try to maintain. You might need to increase maxConcurrentCalls value to
 	// achieve required value.
 	targetRPS int
 
@@ -183,7 +265,7 @@ type HTTPCaller struct {
 	// Default number is specified in defaultHTTPMaxConcurrentCalls
 	maxConcurrentCalls int
 
-	// url is a url which will be used in all probe requests, mandatory in constructor.
+	// url is an url which will be used in all probe requests, mandatory in constructor.
 	url string
 
 	// headers are headers that which will be used in all probe requests, default are none.
@@ -205,63 +287,45 @@ type HTTPCaller struct {
 	// or a Statistics call.
 	isValidResponse func(response *http.Response, body []byte) bool
 
-	statsMu             sync.Mutex
-	statusCodesCount    map[int]int
-	validResponsesCount int
-	totalLatency        statsSet
-	dnsLatency          statsSet
-	connLatency         statsSet
-	tlsLatency          statsSet
-	pureCallLatency     statsSet
-
 	workChan chan struct{}
 	doneChan chan struct{}
 	doneWg   sync.WaitGroup
 
-	// onResp is a callback, which is called when response is received
-	onResp func(*HTTPCallInfo)
+	// All callbacks except onReq and onResp are based on a httptrace callbacks, meaning they are called at the time
+	// and contain signature same as you would expect in httptrace library. In addition to that each callback has a
+	// TraceSuite as a first argument, which will help you to propagate data between these callbacks. You can read more
+	// about it in TraceSuite annotaiton.
 
-	// onFinish is a callback, which is called when probing session is finished
-	onFinish func(*HTTPStatistics)
+	// onDNSStart is a callback which is called when a dns lookup starts. It's based on a httptrace.DNSStart callback.
+	onDNSStart func(suite *TraceSuite, info httptrace.DNSStartInfo)
+	// onDNSDone is a callback which is called when a dns lookup ends. It's based on a httptrace.DNSDone callback.
+	onDNSDone func(suite *TraceSuite, info httptrace.DNSDoneInfo)
+	// onConnStart is a callback which is called when a connection dial starts. It's based on a httptrace.ConnectStart
+	// callback.
+	onConnStart func(suite *TraceSuite, network, addr string)
+	// onConnDone is a callback which is called when a connection dial ends. It's based on a httptrace.ConnectDone
+	// callback.
+	onConnDone func(suite *TraceSuite, network, addr string, err error)
+	// onTLSStart is a callback which is called when a tls handshake starts. It's based on a httptrace.TLSHandshakeStart
+	// callback.
+	onTLSStart func(suite *TraceSuite)
+	// onTLSDone is a callback which is called when a tls handshake ends. It's based on a httptrace.TLSHandshakeDone
+	// callback.
+	onTLSDone func(suite *TraceSuite, state tls.ConnectionState, err error)
+	// onWroteHeaders is a callback which is called when request headers where written. It's based on a
+	// httptrace.WroteHeaders callback.
+	onWroteHeaders func(suite *TraceSuite)
+	// onFirstByteReceived is a callback which is called when first response bytes were received. It's based on a
+	// httptrace.GotFirstResponseByte callback.
+	onFirstByteReceived func(suite *TraceSuite)
+
+	// onReq is a custom callback which is called before http client starts request execution.
+	onReq func(suite *TraceSuite)
+	// onResp is a custom callback which is called when a response is received.
+	onResp func(suite *TraceSuite, info *HTTPCallInfo)
 
 	// logger is a logger implementation, default is none.
 	logger Logger
-}
-
-type statsSet struct {
-	count    int
-	min      time.Duration
-	max      time.Duration
-	avg      time.Duration
-	stdDevM2 time.Duration
-	stdDev   time.Duration
-}
-
-func (s *statsSet) toPublicSet() HTTPStatisticsSet {
-	return HTTPStatisticsSet{
-		Min:    s.min,
-		Max:    s.max,
-		Avg:    s.avg,
-		StdDev: s.stdDev,
-	}
-}
-
-func (s *statsSet) updateByTimePair(tp timePair) {
-	if !tp.isValid() {
-		return
-	}
-	s.count++
-	s.update(tp.getDuration())
-}
-
-func (s *statsSet) update(newVal time.Duration) {
-	if s.min == 0 || newVal < s.min {
-		s.min = newVal
-	}
-	if newVal > s.max {
-		s.max = newVal
-	}
-	s.stdDev, s.stdDevM2, s.avg = calculateStdDev(s.count, newVal, s.avg, s.stdDevM2)
 }
 
 // Stop gracefully stops the execution of a HTTPCaller.
@@ -284,9 +348,6 @@ func (c *HTTPCaller) run(ctx context.Context) {
 	c.runWorkScheduler(ctx)
 	c.runCallers(ctx)
 	c.doneWg.Wait()
-	if c.onFinish != nil {
-		c.onFinish(c.Statistics())
-	}
 }
 
 // getCallFrequency calculates a frequency which should be used to maintain required RPS.
@@ -340,223 +401,206 @@ func (c *HTTPCaller) runCallers(ctx context.Context) {
 	}
 }
 
-type timePair struct {
-	start time.Time
-	end   time.Time
+// TraceSuite is a struct that is passed to each callback. It contains a bunch of time helpers, that you can use with
+// a corresponding getter. These timers are set before making a corresponding callback, meaning that when an onDNSStart
+// callback will be called - TraceSuite will already have filled dnsStart field. In addition to that, it contains
+// an Extra field of type any which you can use in any custom way you might need. Before each callback call, mutex
+// is used, meaning all operations inside your callback are concurrent-safe.
+type TraceSuite struct {
+	mu sync.Mutex
+
+	generalStart      time.Time
+	generalEnd        time.Time
+	dnsStart          time.Time
+	dnsEnd            time.Time
+	connStart         time.Time
+	connEnd           time.Time
+	tlsStart          time.Time
+	tlsEnd            time.Time
+	wroteHeaders      time.Time
+	firstByteReceived time.Time
+
+	Extra any
 }
 
-func (p timePair) isValid() bool {
-	return !p.start.IsZero() && !p.end.IsZero()
+// GetGeneralStart returns a general http request execution start time.
+func (s *TraceSuite) GetGeneralStart() time.Time {
+	return s.generalStart
 }
 
-func (p timePair) getDuration() time.Duration {
-	return p.end.Sub(p.start)
+// GetGeneralEnd returns a general http response time.
+func (s *TraceSuite) GetGeneralEnd() time.Time {
+	return s.generalEnd
 }
 
-type callStatTimers struct {
-	generalCall timePair
-	dns         timePair
-	conn        timePair
-	tls         timePair
-	pureCall    timePair
+// GetDNSStart returns a time of a dns lookup start.
+func (s *TraceSuite) GetDNSStart() time.Time {
+	return s.dnsStart
 }
 
-func getClientTrace(timers *callStatTimers) *httptrace.ClientTrace {
+// GetDNSEnd returns a time of a dns lookup send.
+func (s *TraceSuite) GetDNSEnd() time.Time {
+	return s.dnsEnd
+}
+
+// GetConnStart returns a time of a connection dial start.
+func (s *TraceSuite) GetConnStart() time.Time {
+	return s.connStart
+}
+
+// GetConnEnd returns a time of a connection dial end.
+func (s *TraceSuite) GetConnEnd() time.Time {
+	return s.connEnd
+}
+
+// GetTLSStart returns a time of a tls handshake start.
+func (s *TraceSuite) GetTLSStart() time.Time {
+	return s.tlsStart
+}
+
+// GetTLSEnd returns a time of a tls handshake end.
+func (s *TraceSuite) GetTLSEnd() time.Time {
+	return s.tlsEnd
+}
+
+// GetRequestWritten returns a time when request headers were written.
+func (s *TraceSuite) GetRequestWritten() time.Time {
+	return s.wroteHeaders
+}
+
+// GetFirstByteReceived returns a time when first response bytes were received.
+func (s *TraceSuite) GetFirstByteReceived() time.Time {
+	return s.firstByteReceived
+}
+
+func (c *HTTPCaller) getClientTrace(suite *TraceSuite) *httptrace.ClientTrace {
 	return &httptrace.ClientTrace{
 		DNSStart: func(info httptrace.DNSStartInfo) {
-			timers.dns.start = time.Now()
+			suite.mu.Lock()
+			defer suite.mu.Unlock()
+
+			suite.dnsStart = time.Now()
+			if c.onDNSStart != nil {
+				c.onDNSStart(suite, info)
+			}
 		},
 		DNSDone: func(info httptrace.DNSDoneInfo) {
-			timers.dns.end = time.Now()
+			suite.mu.Lock()
+			defer suite.mu.Unlock()
+
+			suite.dnsEnd = time.Now()
+			if c.onDNSDone != nil {
+				c.onDNSDone(suite, info)
+			}
 		},
 		ConnectStart: func(network, addr string) {
-			timers.conn.start = time.Now()
+			suite.mu.Lock()
+			defer suite.mu.Unlock()
+
+			suite.connStart = time.Now()
+			if c.onConnStart != nil {
+				c.onConnStart(suite, network, addr)
+			}
 		},
 		ConnectDone: func(network, addr string, err error) {
-			timers.conn.end = time.Now()
+			suite.mu.Lock()
+			defer suite.mu.Unlock()
+
+			suite.connEnd = time.Now()
+			if c.onConnDone != nil {
+				c.onConnDone(suite, network, addr, err)
+			}
 		},
 		TLSHandshakeStart: func() {
-			timers.tls.start = time.Now()
+			suite.mu.Lock()
+			defer suite.mu.Unlock()
+
+			suite.tlsStart = time.Now()
+			if c.onTLSStart != nil {
+				c.onTLSStart(suite)
+			}
 		},
 		TLSHandshakeDone: func(state tls.ConnectionState, err error) {
-			timers.tls.end = time.Now()
+			suite.mu.Lock()
+			defer suite.mu.Unlock()
+
+			suite.tlsEnd = time.Now()
+			if c.onTLSDone != nil {
+				c.onTLSDone(suite, state, err)
+			}
 		},
 		WroteHeaders: func() {
-			timers.pureCall.start = time.Now()
+			suite.mu.Lock()
+			defer suite.mu.Unlock()
+
+			suite.wroteHeaders = time.Now()
+			if c.onWroteHeaders != nil {
+				c.onWroteHeaders(suite)
+			}
 		},
 		GotFirstResponseByte: func() {
-			timers.pureCall.end = time.Now()
+			suite.mu.Lock()
+			defer suite.mu.Unlock()
+
+			suite.firstByteReceived = time.Now()
+			if c.onFirstByteReceived != nil {
+				c.onFirstByteReceived(suite)
+			}
 		},
 	}
 }
 
-func (c *HTTPCaller) addStats(statusCode int, isValidResponse bool, timers callStatTimers) {
-	// TODO: channels?
-	c.statsMu.Lock()
-	defer c.statsMu.Unlock()
-
-	c.statusCodesCount[statusCode]++
-	if isValidResponse {
-		c.validResponsesCount++
-	}
-	c.totalLatency.updateByTimePair(timers.generalCall)
-	c.dnsLatency.updateByTimePair(timers.dns)
-	c.connLatency.updateByTimePair(timers.conn)
-	c.tlsLatency.updateByTimePair(timers.tls)
-	c.pureCallLatency.updateByTimePair(timers.pureCall)
-}
-
-// TODO: check http client effective lifehacks
 func (c *HTTPCaller) makeCall(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	statTimers := callStatTimers{}
-	trace := getClientTrace(&statTimers)
-
-	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), c.method, c.url, bytes.NewReader(c.body))
+	suite := TraceSuite{
+		generalStart: time.Now(),
+	}
+	traceCtx := httptrace.WithClientTrace(ctx, c.getClientTrace(&suite))
+	req, err := http.NewRequestWithContext(traceCtx, c.method, c.url, bytes.NewReader(c.body))
 	if err != nil {
-		return err // TODO: wrap
+		return err
 	}
 	req.Header = c.headers
 
-	statTimers.generalCall.start = time.Now()
+	if c.onReq != nil {
+		suite.mu.Lock()
+		c.onReq(&suite)
+		suite.mu.Unlock()
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
 	}
-	body, err := io.ReadAll(resp.Body) // TODO: ok? think about it
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return err // TODO: wrap
+		return err
 	}
-	resp.Body.Close() // TODO: err?
-	statTimers.generalCall.end = time.Now()
+	resp.Body.Close()
 	isValidResponse := true
 	if c.isValidResponse != nil {
 		isValidResponse = c.isValidResponse(resp, body)
 	}
-	c.addStats(resp.StatusCode, isValidResponse, statTimers)
 	if c.onResp != nil {
-		c.onResp(formHTTPCallInfo(resp.StatusCode, isValidResponse, statTimers))
+		suite.mu.Lock()
+		defer suite.mu.Unlock()
+
+		suite.generalEnd = time.Now()
+		c.onResp(&suite, &HTTPCallInfo{
+			StatusCode:      resp.StatusCode,
+			IsValidResponse: isValidResponse,
+		})
 	}
 	return nil
 }
 
-// Statistics returns current aggregation statistics of the ongoing probing session.
-func (c *HTTPCaller) Statistics() *HTTPStatistics {
-	c.statsMu.Lock() // TODO: rwMu?
-	defer c.statsMu.Unlock()
-
-	statusCodesCount := make(map[int]int, len(c.statusCodesCount))
-	for k, v := range c.statusCodesCount {
-		statusCodesCount[k] = v
-	}
-	return &HTTPStatistics{
-		StatusCodesCount:    statusCodesCount,
-		CallsCount:          c.totalLatency.count,
-		ValidResponsesCount: c.validResponsesCount,
-
-		TotalLatency:    c.totalLatency.toPublicSet(),
-		DNSLatency:      c.dnsLatency.toPublicSet(),
-		ConnLatency:     c.connLatency.toPublicSet(),
-		TLSLatency:      c.tlsLatency.toPublicSet(),
-		PureCallLatency: c.pureCallLatency.toPublicSet(),
-	}
-}
-
 // HTTPCallInfo represents a data set which passed as a function argument to an onResp callback.
 type HTTPCallInfo struct {
-	// RequestTime is a time when an overall http call was started.
-	RequestTime time.Time
-
-	// ResponseTime is a time when an overall http call was finished.
-	ResponseTime time.Time
-
-	// DNSStartTime is a time when a dns request started. Will be equal to time.Zero if dns resolving wasn't triggered.
-	DNSStartTime time.Time
-
-	// DNSDoneTime is a time when a dns response received. Will be equal to time.Zero if dns resolving wasn't triggered.
-	DNSDoneTime time.Time
-
-	// ConnStartTime is a time when a connection establishing started.
-	ConnStartTime time.Time
-
-	// ConnDoneTime is a time when a connection was successfully established.
-	ConnDoneTime time.Time
-
-	// TLSStartTime is a time when a TLS handshake started. Will be equal to time.Zero if it's not a https call.
-	TLSStartTime time.Time
-
-	// TLSEndTime is a time when a TLS handshake finished. Will be equal to time.Zero if it's not a https call.
-	TLSEndTime time.Time
-
-	// RequestHeadersWrittenTime is a time when all request headers were written. Can be used in pair
-	// with ResponseFirstByteReceivedTime to calculate "pure" latency. TODO: think about a better term then "pure"
-	RequestHeadersWrittenTime time.Time
-
-	// ResponseFirstByteReceivedTime is a time when first response bytes were received. Can be used in pair with
-	// RequestHeadersWrittenTime to calculate "pure" latency. TODO: think about a better term then "pure"
-	ResponseFirstByteReceivedTime time.Time
-
 	// StatusCode is a response status code
 	StatusCode int
 
 	// IsValidResponse represents a fact of whether a response is treated as valid. You can read more about it in
 	// HTTPCaller annotation.
-	IsValidResponse bool // TODO: think about the naming here, ANNOTATE!
-}
-
-// HTTPStatistics represents the overall probing session statistics.
-type HTTPStatistics struct {
-	// StatusCodesCount contains pairs of codes with counters of their appearances, where a key is a code and value is
-	// a counter
-	StatusCodesCount map[int]int
-
-	// CallsCount is an overall number of performed calls
-	CallsCount int
-
-	// ValidResponsesCount is a number of responses that were treated a valid. You can read more about it in
-	// HTTPCaller annotation.
-	ValidResponsesCount int
-
-	// TotalLatency contains statistical aggregations for a full call latencies.
-	TotalLatency HTTPStatisticsSet
-
-	// DNSLatency contains statistical aggregations for a dns resolvement.
-	DNSLatency HTTPStatisticsSet
-
-	// ConnLatency contains statistical aggregations for connection establishments.
-	ConnLatency HTTPStatisticsSet
-
-	// TLSLatency contains statistical aggregations for tls handshakes.
-	TLSLatency HTTPStatisticsSet
-
-	// PureCallLatency contains statistical aggregations for pure call latencies.
-	PureCallLatency HTTPStatisticsSet // TODO: think about a better term then "pure"
-}
-
-func formHTTPCallInfo(statusCode int, isValidResponse bool, statTimers callStatTimers) *HTTPCallInfo {
-	return &HTTPCallInfo{
-		RequestTime:                   statTimers.generalCall.start,
-		ResponseTime:                  statTimers.generalCall.end,
-		DNSStartTime:                  statTimers.dns.start,
-		DNSDoneTime:                   statTimers.dns.end,
-		ConnStartTime:                 statTimers.conn.start,
-		ConnDoneTime:                  statTimers.conn.end,
-		TLSStartTime:                  statTimers.tls.start,
-		TLSEndTime:                    statTimers.tls.end,
-		RequestHeadersWrittenTime:     statTimers.pureCall.start,
-		ResponseFirstByteReceivedTime: statTimers.pureCall.end,
-
-		StatusCode:      statusCode,
-		IsValidResponse: isValidResponse,
-	}
-}
-
-// HTTPStatisticsSet is a common reused set of standard statistical functions.
-type HTTPStatisticsSet struct {
-	Min    time.Duration
-	Max    time.Duration
-	Avg    time.Duration
-	StdDev time.Duration
+	IsValidResponse bool
 }
