@@ -24,6 +24,7 @@ type httpCallerOptions struct {
 	callFrequency      time.Duration
 	maxConcurrentCalls int
 
+	host    string
 	headers http.Header
 	method  string
 	body    []byte
@@ -75,6 +76,7 @@ func WithHTTPCallerMaxConcurrentCalls(max int) HTTPCallerOption {
 
 // WithHTTPCallerHeaders is a functional parameter for a HTTPCaller which specifies headers that should be
 // set in request.
+// To override a Host header use a WithHTTPCallerHost method.
 func WithHTTPCallerHeaders(headers http.Header) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.headers = headers
@@ -87,6 +89,13 @@ func WithHTTPCallerHeaders(headers http.Header) HTTPCallerOption {
 func WithHTTPCallerMethod(method string) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.method = method
+	}
+}
+
+// WithHTTPCallerHost is a functional parameter for a HTTPCaller which allowed to override a host header.
+func WithHTTPCallerHost(host string) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.host = host
 	}
 }
 
@@ -228,6 +237,7 @@ func NewHttpCaller(url string, options ...HTTPCallerOption) *HTTPCaller {
 		maxConcurrentCalls: opts.maxConcurrentCalls,
 
 		url:     url,
+		host:    opts.host,
 		headers: opts.headers,
 		method:  opts.method,
 		body:    opts.body,
@@ -268,6 +278,9 @@ type HTTPCaller struct {
 
 	// url is an url which will be used in all probe requests, mandatory in constructor.
 	url string
+
+	// host allows to override a Host header
+	host string
 
 	// headers are headers that which will be used in all probe requests, default are none.
 	headers http.Header
@@ -560,6 +573,9 @@ func (c *HTTPCaller) makeCall(ctx context.Context) error {
 		return err
 	}
 	req.Header = c.headers
+	if c.host != "" {
+		req.Host = c.host
+	}
 
 	if c.onReq != nil {
 		suite.mu.Lock()
