@@ -221,8 +221,6 @@ func NewHttpCaller(url string, options ...HTTPCallerOption) *HTTPCaller {
 		opt(&opts)
 	}
 
-	// TODO: validate opts
-
 	return &HTTPCaller{
 		client: opts.client,
 
