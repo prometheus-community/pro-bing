@@ -3,8 +3,10 @@ package probing
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"sync"
 	"time"
 )
@@ -157,13 +159,12 @@ type HTTPCaller struct {
 
 	statsMu             sync.Mutex
 	statusCodesCount    map[int]int
-	callsCount          int
 	validResponsesCount int
-	minLatency          time.Duration
-	maxLatency          time.Duration
-	avgLatency          time.Duration
-	stdDevM2Latency     time.Duration
-	stdDevLatency       time.Duration
+	totalLatency        statsSet
+	dnsLatency          statsSet
+	connLatency         statsSet
+	tlsLatency          statsSet
+	pureCallLatency     statsSet // TODO: annotate
 
 	workChan chan struct{}
 	doneChan chan struct{}
@@ -173,6 +174,34 @@ type HTTPCaller struct {
 	onFinish func(*HTTPStatistics)
 
 	logger Logger
+}
+
+type statsSet struct {
+	count    int
+	min      time.Duration
+	max      time.Duration
+	avg      time.Duration
+	stdDevM2 time.Duration
+	stdDev   time.Duration
+}
+
+func (s statsSet) toPublicSet() HTTPStatisticsSet {
+	return HTTPStatisticsSet{
+		Min:    s.min,
+		Max:    s.max,
+		Avg:    s.avg,
+		StdDev: s.stdDev,
+	}
+}
+
+func (s *statsSet) update(newVal time.Duration, count int) {
+	if s.min == 0 || newVal < s.min {
+		s.min = newVal
+	}
+	if newVal > s.max {
+		s.max = newVal
+	}
+	s.stdDev, s.stdDevM2, s.avg = calculateStdDev(count, newVal, s.avg, s.stdDevM2)
 }
 
 func (c *HTTPCaller) Stop() {
@@ -191,16 +220,18 @@ func (c *HTTPCaller) RunWithContext(ctx context.Context) error {
 	return nil
 }
 
+// TODO: proper annotation & explanation
+func (c *HTTPCaller) getCallFrequency() time.Duration {
+	return time.Second / time.Duration(c.targetRPS)
+}
+
 // TODO: rename
 func (c *HTTPCaller) runWorkCreator(ctx context.Context) {
 	c.doneWg.Add(1)
 	go func() {
 		defer c.doneWg.Done()
 
-		freq := int(time.Second) / c.targetRPS // TODO: explanation comment
-		// TODO: move to separate function, freq calc & TEST
-
-		ticker := time.NewTicker(time.Duration(freq))
+		ticker := time.NewTicker(c.getCallFrequency())
 		defer ticker.Stop()
 
 		for {
@@ -246,7 +277,45 @@ func (c *HTTPCaller) makeCall(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, c.method, c.url, bytes.NewReader(c.body))
+	var (
+		dnsStart                time.Time
+		dnsDone                 time.Time
+		connStart               time.Time
+		connDone                time.Time
+		tlsStart                time.Time
+		tlsDone                 time.Time
+		requestHeadersWriteDone time.Time
+		responseFirstByteDone   time.Time
+	)
+
+	trace := httptrace.ClientTrace{
+		DNSStart: func(info httptrace.DNSStartInfo) {
+			dnsStart = time.Now()
+		},
+		DNSDone: func(info httptrace.DNSDoneInfo) {
+			dnsStart = time.Now()
+		},
+		ConnectStart: func(network, addr string) {
+			connStart = time.Now()
+		},
+		ConnectDone: func(network, addr string, err error) {
+			connDone = time.Now()
+		},
+		TLSHandshakeStart: func() {
+			tlsStart = time.Now()
+		},
+		TLSHandshakeDone: func(state tls.ConnectionState, err error) {
+			tlsDone = time.Now()
+		},
+		WroteHeaders: func() {
+			requestHeadersWriteDone = time.Now()
+		},
+		GotFirstResponseByte: func() {
+			responseFirstByteDone = time.Now()
+		},
+	}
+
+	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, &trace), c.method, c.url, bytes.NewReader(c.body))
 	if err != nil {
 		return err // TODO: wrap
 	}
@@ -263,7 +332,7 @@ func (c *HTTPCaller) makeCall(ctx context.Context) error {
 	}
 	resp.Body.Close() // TODO: err?
 	responseTime := time.Now()
-	latency := responseTime.Sub(requestTime)
+	totalLatency := responseTime.Sub(requestTime)
 	isValidResponse := true
 	if c.isValidResponse != nil {
 		isValidResponse = c.isValidResponse(resp, body)
@@ -273,22 +342,38 @@ func (c *HTTPCaller) makeCall(ctx context.Context) error {
 	c.statsMu.Lock()
 	defer c.statsMu.Unlock()
 	c.statusCodesCount[resp.StatusCode]++
-	c.callsCount++
 	if isValidResponse {
 		c.validResponsesCount++
 	}
-	if c.callsCount == 1 || latency < c.minLatency {
-		c.minLatency = latency
+	c.totalLatency.count++
+	c.totalLatency.update(totalLatency, c.totalLatency.count)
+	if !dnsStart.IsZero() && !dnsDone.IsZero() {
+		c.dnsLatency.count++
+		c.dnsLatency.update(dnsDone.Sub(dnsStart), c.dnsLatency.count)
 	}
-	if latency > c.maxLatency {
-		c.maxLatency = latency
+	if !connStart.IsZero() && !connDone.IsZero() {
+		c.connLatency.count++
+		c.connLatency.update(connDone.Sub(connStart), c.connLatency.count)
 	}
-	c.stdDevLatency, c.stdDevM2Latency, c.avgLatency = calculateStdDev(c.callsCount, latency, c.avgLatency, c.stdDevM2Latency)
+	if !tlsStart.IsZero() && !tlsDone.IsZero() {
+		c.tlsLatency.count++
+		c.tlsLatency.update(tlsDone.Sub(tlsStart), c.tlsLatency.count)
+	}
+	c.pureCallLatency.count++ // technically obsolete, keeping for the same style
+	c.pureCallLatency.update(responseFirstByteDone.Sub(requestHeadersWriteDone), c.pureCallLatency.count)
 
 	if c.onResp != nil {
 		c.onResp(&HTTPCallInfo{
-			RequestTime:     requestTime,
-			ResponseTime:    responseTime,
+			RequestTime:                   requestTime,
+			ResponseTime:                  responseTime,
+			DNSStartTime:                  dnsStart,
+			DNSDoneTime:                   dnsDone,
+			ConnStartTime:                 connStart,
+			ConnDoneTime:                  connDone,
+			TLSStartTime:                  tlsStart,
+			RequestHeadersWrittenTime:     requestHeadersWriteDone,
+			ResponseFirstByteReceivedTime: responseFirstByteDone,
+
 			StatusCode:      resp.StatusCode,
 			IsValidResponse: isValidResponse,
 		})
@@ -306,19 +391,29 @@ func (c *HTTPCaller) Statistics() *HTTPStatistics {
 	}
 	return &HTTPStatistics{
 		StatusCodesCount:    statusCodesCount,
-		CallsCount:          c.callsCount,
+		CallsCount:          c.totalLatency.count,
 		ValidResponsesCount: c.validResponsesCount,
-		MinLatency:          c.minLatency,
-		MaxLatency:          c.maxLatency,
-		AvgLatency:          c.avgLatency,
-		StdDevLatency:       c.stdDevLatency,
+
+		TotalLatency:    c.totalLatency.toPublicSet(),
+		DNSLatency:      c.dnsLatency.toPublicSet(),
+		ConnLatency:     c.connLatency.toPublicSet(),
+		TLSLatency:      c.tlsLatency.toPublicSet(),
+		PureCallLatency: c.pureCallLatency.toPublicSet(),
 	}
 }
 
 // TODO: do we want to provide a resopnse? Think about it
 type HTTPCallInfo struct {
-	RequestTime     time.Time
-	ResponseTime    time.Time
+	RequestTime                   time.Time
+	ResponseTime                  time.Time
+	DNSStartTime                  time.Time
+	DNSDoneTime                   time.Time
+	ConnStartTime                 time.Time
+	ConnDoneTime                  time.Time
+	TLSStartTime                  time.Time
+	RequestHeadersWrittenTime     time.Time
+	ResponseFirstByteReceivedTime time.Time
+
 	StatusCode      int
 	IsValidResponse bool // TODO: think about the naming here, ANNOTATE!
 }
@@ -328,8 +423,17 @@ type HTTPStatistics struct {
 	StatusCodesCount    map[int]int
 	CallsCount          int
 	ValidResponsesCount int
-	MinLatency          time.Duration
-	MaxLatency          time.Duration
-	AvgLatency          time.Duration
-	StdDevLatency       time.Duration
+
+	TotalLatency    HTTPStatisticsSet
+	DNSLatency      HTTPStatisticsSet
+	ConnLatency     HTTPStatisticsSet
+	TLSLatency      HTTPStatisticsSet
+	PureCallLatency HTTPStatisticsSet // TODO: think about name
+}
+
+type HTTPStatisticsSet struct {
+	Min    time.Duration
+	Max    time.Duration
+	Avg    time.Duration
+	StdDev time.Duration
 }
