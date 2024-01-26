@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	defaultHTTPTargetRPS          = 1
+	defaultHTTPCallFrequency      = time.Second
 	defaultHTTPMaxConcurrentCalls = 1
 	defaultHTTPMethod             = http.MethodGet
 	defaultTimeout                = time.Second * 10
@@ -21,7 +21,7 @@ const (
 type httpCallerOptions struct {
 	client *http.Client
 
-	targetRPS          int
+	callFrequency      time.Duration
 	maxConcurrentCalls int
 
 	headers http.Header
@@ -55,11 +55,12 @@ func WithHTTPCallerClient(client *http.Client) HTTPCallerOption {
 	}
 }
 
-// WithHTTPCallerTargetRPS is a functional parameter for a HTTPCaller which specifies a rps. If this option
-// is not provided the default one will be used. You can check default value in const defaultHTTPTargetRPS.
-func WithHTTPCallerTargetRPS(rps int) HTTPCallerOption {
+// WithHTTPCallerCallFrequency is a functional parameter for a HTTPCaller which specifies a call frequency.
+// If this option is not provided the default one will be used. You can check default value in const
+// defaultHTTPCallFrequency.
+func WithHTTPCallerCallFrequency(frequency time.Duration) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
-		options.targetRPS = rps
+		options.callFrequency = frequency
 	}
 }
 
@@ -210,7 +211,7 @@ func WithHTTPCallerLogger(logger Logger) HTTPCallerOption {
 // functional parameters, otherwise default values will be used where applicable.
 func NewHttpCaller(url string, options ...HTTPCallerOption) *HTTPCaller {
 	opts := httpCallerOptions{
-		targetRPS:          defaultHTTPTargetRPS,
+		callFrequency:      defaultHTTPCallFrequency,
 		maxConcurrentCalls: defaultHTTPMaxConcurrentCalls,
 		method:             defaultHTTPMethod,
 		timeout:            defaultTimeout,
@@ -225,7 +226,7 @@ func NewHttpCaller(url string, options ...HTTPCallerOption) *HTTPCaller {
 	return &HTTPCaller{
 		client: opts.client,
 
-		targetRPS:          opts.targetRPS,
+		callFrequency:      opts.callFrequency,
 		maxConcurrentCalls: opts.maxConcurrentCalls,
 
 		url:     url,
@@ -258,9 +259,9 @@ func NewHttpCaller(url string, options ...HTTPCallerOption) *HTTPCaller {
 type HTTPCaller struct {
 	client *http.Client
 
-	// targetRPS is an RPS which prober will try to maintain. You might need to increase maxConcurrentCalls value to
-	// achieve required value.
-	targetRPS int
+	// callFrequency is a parameter which specifies how often to send a new request. You might need to increase
+	// maxConcurrentCalls value to achieve required value.
+	callFrequency time.Duration
 
 	// maxConcurrentCalls is a maximum number of calls that might be performed concurrently. In other words,
 	// a number of "workers" that will try to perform probing concurrently.
@@ -352,17 +353,12 @@ func (c *HTTPCaller) run(ctx context.Context) {
 	c.doneWg.Wait()
 }
 
-// getCallFrequency calculates a frequency which should be used to maintain required RPS.
-func (c *HTTPCaller) getCallFrequency() time.Duration {
-	return time.Second / time.Duration(c.targetRPS)
-}
-
 func (c *HTTPCaller) runWorkScheduler(ctx context.Context) {
 	c.doneWg.Add(1)
 	go func() {
 		defer c.doneWg.Done()
 
-		ticker := time.NewTicker(c.getCallFrequency())
+		ticker := time.NewTicker(c.callFrequency)
 		defer ticker.Stop()
 
 		for {

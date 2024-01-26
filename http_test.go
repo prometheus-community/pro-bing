@@ -290,20 +290,12 @@ func TestHTTPCaller_MakeCall_IsValidResponse(t *testing.T) {
 	})
 }
 
-func TestHTTPCaller_getCallFrequency(t *testing.T) {
-	targetRPS := 5
-	httpCaller := NewHttpCaller("example.com", WithHTTPCallerTargetRPS(targetRPS))
-	frequency := httpCaller.getCallFrequency()
-	expectedFrequency := time.Millisecond * 200
-	AssertEqualDurations(t, expectedFrequency, frequency)
-}
-
 func TestHTTPCaller_RunWithContext(t *testing.T) {
 	var callsCount int
 	var callsCountMu sync.Mutex
 	httpCaller := NewHttpCaller("https://google.com",
 		WithHTTPCallerMaxConcurrentCalls(5),
-		WithHTTPCallerTargetRPS(5),
+		WithHTTPCallerCallFrequency(time.Second/5),
 		WithHTTPCallerClient(&testHTTPClient),
 		WithHTTPCallerTimeout(time.Second),
 		WithHTTPCallerOnReq(func(suite *TraceSuite) {
@@ -341,13 +333,6 @@ func AssertTimeNonZero(t *testing.T, tm time.Time) {
 	t.Helper()
 	if tm.IsZero() {
 		t.Errorf("Expected non zero time, got zero time, Stack: \n%s", string(debug.Stack()))
-	}
-}
-
-func AssertEqualDurations(t *testing.T, expected, actual time.Duration) {
-	t.Helper()
-	if expected != actual {
-		t.Errorf("Expected %s, got %s, Stack:\n%s", expected, actual, string(debug.Stack()))
 	}
 }
 
