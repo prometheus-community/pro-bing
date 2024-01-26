@@ -172,10 +172,10 @@ func WithHTTPCallerOnWroteRequest(onWroteRequest func(suite *TraceSuite)) HTTPCa
 	}
 }
 
-// WithHTTPCallerOnGotFirstByte is a functional parameter for a HTTPCaller which specifies a callback that will be
+// WithHTTPCallerOnFirstByteReceived is a functional parameter for a HTTPCaller which specifies a callback that will be
 // called when first response byte has been received. You can read more explanation about this parameter in HTTPCaller
 // annotation.
-func WithHTTPCallerOnGotFirstByte(onGotFirstByte func(suite *TraceSuite)) HTTPCallerOption {
+func WithHTTPCallerOnFirstByteReceived(onGotFirstByte func(suite *TraceSuite)) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.onFirstByteReceived = onGotFirstByte
 	}
@@ -220,6 +220,8 @@ func NewHttpCaller(url string, options ...HTTPCallerOption) *HTTPCaller {
 		opt(&opts)
 	}
 
+	// TODO: validate opts
+
 	return &HTTPCaller{
 		client: opts.client,
 
@@ -234,7 +236,7 @@ func NewHttpCaller(url string, options ...HTTPCallerOption) *HTTPCaller {
 
 		isValidResponse: opts.isValidResponse,
 
-		workChan: make(chan struct{}, defaultHTTPMaxConcurrentCalls),
+		workChan: make(chan struct{}, opts.maxConcurrentCalls),
 		doneChan: make(chan struct{}),
 
 		onDNSStart:          opts.onDNSStart,
@@ -294,7 +296,7 @@ type HTTPCaller struct {
 	// All callbacks except onReq and onResp are based on a httptrace callbacks, meaning they are called at the time
 	// and contain signature same as you would expect in httptrace library. In addition to that each callback has a
 	// TraceSuite as a first argument, which will help you to propagate data between these callbacks. You can read more
-	// about it in TraceSuite annotaiton.
+	// about it in TraceSuite annotation.
 
 	// onDNSStart is a callback which is called when a dns lookup starts. It's based on a httptrace.DNSStart callback.
 	onDNSStart func(suite *TraceSuite, info httptrace.DNSStartInfo)
@@ -406,6 +408,7 @@ func (c *HTTPCaller) runCallers(ctx context.Context) {
 // callback will be called - TraceSuite will already have filled dnsStart field. In addition to that, it contains
 // an Extra field of type any which you can use in any custom way you might need. Before each callback call, mutex
 // is used, meaning all operations inside your callback are concurrent-safe.
+// Keep in mind, that if your http client set up to follow redirects - timers will be overwritten.
 type TraceSuite struct {
 	mu sync.Mutex
 
@@ -463,8 +466,8 @@ func (s *TraceSuite) GetTLSEnd() time.Time {
 	return s.tlsEnd
 }
 
-// GetRequestWritten returns a time when request headers were written.
-func (s *TraceSuite) GetRequestWritten() time.Time {
+// GetWroteHeaders returns a time when request headers were written.
+func (s *TraceSuite) GetWroteHeaders() time.Time {
 	return s.wroteHeaders
 }
 
