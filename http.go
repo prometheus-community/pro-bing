@@ -12,37 +12,148 @@ import (
 const (
 	defaultHTTPTargetRPS          = 1
 	defaultHTTPMaxConcurrentCalls = 10
+	defaultHTTPMethod             = http.MethodGet
 	defaultTimeout                = time.Second * 10
 )
 
-func NewHttpCaller(url string, method string, body []byte) *HTTPCaller {
-	return &HTTPCaller{
-		TargetRPS:          defaultHTTPTargetRPS,          // TODO: describe this default
-		MaxConcurrentCalls: defaultHTTPMaxConcurrentCalls, // TODO: describe this default
-		URL:                url,
-		Method:             method,
-		Body:               body,
-		Timeout:            defaultTimeout, // TODO: describe this default
+type httpCallerOptions struct {
+	client http.Client
 
-		workChan: make(chan struct{}, defaultHTTPMaxConcurrentCalls),
+	targetRPS          int
+	maxConcurrentCalls int
+
+	headers http.Header
+	method  string
+	body    []byte
+	timeout time.Duration
+
+	isValidResponse func(response *http.Response, body []byte) bool
+
+	onResp   func(*HTTPCallInfo)
+	onFinish func(*HTTPStatistics)
+
+	logger Logger
+}
+
+type HTTPCallerOption func(options *httpCallerOptions)
+
+// TODO: ptr input?
+func WithHTTPCallerClient(client http.Client) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.client = client
+	}
+}
+
+func WithHTTPCallerTargetRPS(rps int) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.targetRPS = rps
+	}
+}
+
+func WithHTTPCallerMaxConcurrentCalls(max int) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.maxConcurrentCalls = max
+	}
+}
+
+func WithHTTPCallerHeaders(headers http.Header) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.headers = headers
+	}
+}
+
+func WithHTTPCallerMethod(method string) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.method = method
+	}
+}
+
+func WithHTTPCallerBody(body []byte) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.body = body
+	}
+}
+
+func WithHTTPCallerTimeout(timeout time.Duration) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.timeout = timeout
+	}
+}
+
+func WithHTTPCallerIsValidResponse(isValid func(response *http.Response, body []byte) bool) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.isValidResponse = isValid
+	}
+}
+
+func WithHTTPCallerOnResp(onResp func(*HTTPCallInfo)) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.onResp = onResp
+	}
+}
+
+func WithHTTPCallerOnFinish(onFinish func(statistics *HTTPStatistics)) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.onFinish = onFinish
+	}
+}
+
+func WithHTTPCallerLogger(logger Logger) HTTPCallerOption {
+	return func(options *httpCallerOptions) {
+		options.logger = logger
+	}
+}
+
+func NewHttpCaller(url string, options ...HTTPCallerOption) *HTTPCaller {
+	opts := httpCallerOptions{
+		targetRPS:          defaultHTTPTargetRPS,
+		maxConcurrentCalls: defaultHTTPMaxConcurrentCalls,
+		method:             defaultHTTPMethod,
+		timeout:            defaultTimeout,
+	}
+	for _, opt := range options {
+		opt(&opts)
+	}
+
+	return &HTTPCaller{
+		client: opts.client,
+
+		targetRPS:          opts.targetRPS,
+		maxConcurrentCalls: opts.maxConcurrentCalls,
+
+		url:     url,
+		headers: opts.headers,
+		method:  opts.method,
+		body:    opts.body,
+		timeout: opts.timeout,
+
+		isValidResponse: opts.isValidResponse,
 
 		statusCodesCount: make(map[int]int),
+
+		workChan: make(chan struct{}, defaultHTTPMaxConcurrentCalls),
+		doneChan: make(chan struct{}),
+
+		onResp:   opts.onResp,
+		onFinish: opts.onFinish,
+
+		logger: opts.logger,
 	}
 }
 
 type HTTPCaller struct {
-	TargetRPS          int
-	MaxConcurrentCalls int
+	client http.Client
 
-	URL     string
-	Headers map[string]string
-	Method  string
-	Body    []byte
-	Timeout time.Duration
+	targetRPS          int
+	maxConcurrentCalls int
 
-	IsValidResponse func(response *http.Response, body []byte) bool // TODO: annotate
+	url     string
+	headers http.Header
+	method  string
+	body    []byte
+	timeout time.Duration
 
-	client http.Client // TODO: allow client interface
+	isValidResponse func(response *http.Response, body []byte) bool // TODO: annotate
 
 	statsMu             sync.Mutex
 	statusCodesCount    map[int]int
@@ -58,28 +169,10 @@ type HTTPCaller struct {
 	doneChan chan struct{}
 	doneWg   sync.WaitGroup
 
+	onResp   func(*HTTPCallInfo)
+	onFinish func(*HTTPStatistics)
+
 	logger Logger
-
-	OnResp   func(*HTTPCallInfo)
-	OnFinish func(*HTTPStatistics)
-}
-
-func (c *HTTPCaller) SetTimeout(timeout time.Duration) {
-	c.Timeout = timeout
-}
-
-func (c *HTTPCaller) SetTargetRPS(rps int) {
-	c.TargetRPS = rps
-}
-
-// TODO: annotate the behaviour about the channel
-func (c *HTTPCaller) SetMaxConcurrentCalls(num int) {
-	c.MaxConcurrentCalls = num
-	c.workChan = make(chan struct{}, num)
-}
-
-func (c *HTTPCaller) SetLogger(logger Logger) {
-	c.logger = logger
 }
 
 func (c *HTTPCaller) Stop() {
@@ -92,8 +185,8 @@ func (c *HTTPCaller) RunWithContext(ctx context.Context) error {
 	c.runWorkCreator(ctx)
 	c.runCallers(ctx)
 	c.doneWg.Wait()
-	if c.OnFinish != nil {
-		c.OnFinish(c.Statistics())
+	if c.onFinish != nil {
+		c.onFinish(c.Statistics())
 	}
 	return nil
 }
@@ -104,7 +197,7 @@ func (c *HTTPCaller) runWorkCreator(ctx context.Context) {
 	go func() {
 		defer c.doneWg.Done()
 
-		freq := int(time.Second) / c.TargetRPS // TODO: explanation comment
+		freq := int(time.Second) / c.targetRPS // TODO: explanation comment
 		// TODO: move to separate function, freq calc & TEST
 
 		ticker := time.NewTicker(time.Duration(freq))
@@ -124,7 +217,7 @@ func (c *HTTPCaller) runWorkCreator(ctx context.Context) {
 }
 
 func (c *HTTPCaller) runCallers(ctx context.Context) {
-	for i := 0; i < c.MaxConcurrentCalls; i++ {
+	for i := 0; i < c.maxConcurrentCalls; i++ {
 		c.doneWg.Add(1)
 		go func() {
 			defer c.doneWg.Done()
@@ -150,16 +243,14 @@ func (c *HTTPCaller) runCallers(ctx context.Context) {
 
 // TODO: check http client effective lifehacks
 func (c *HTTPCaller) makeCall(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, c.Method, c.URL, bytes.NewReader(c.Body))
+	req, err := http.NewRequestWithContext(ctx, c.method, c.url, bytes.NewReader(c.body))
 	if err != nil {
 		return err // TODO: wrap
 	}
-	for header, value := range c.Headers {
-		req.Header.Add(header, value)
-	}
+	req.Header = c.headers
 
 	requestTime := time.Now()
 	resp, err := c.client.Do(req)
@@ -174,8 +265,8 @@ func (c *HTTPCaller) makeCall(ctx context.Context) error {
 	responseTime := time.Now()
 	latency := responseTime.Sub(requestTime)
 	isValidResponse := true
-	if c.IsValidResponse != nil {
-		isValidResponse = c.IsValidResponse(resp, body)
+	if c.isValidResponse != nil {
+		isValidResponse = c.isValidResponse(resp, body)
 	}
 
 	// TODO: channels?
@@ -194,8 +285,8 @@ func (c *HTTPCaller) makeCall(ctx context.Context) error {
 	}
 	c.stdDevLatency, c.stdDevM2Latency, c.avgLatency = calculateStdDev(c.callsCount, latency, c.avgLatency, c.stdDevM2Latency)
 
-	if c.OnResp != nil {
-		c.OnResp(&HTTPCallInfo{
+	if c.onResp != nil {
+		c.onResp(&HTTPCallInfo{
 			RequestTime:     requestTime,
 			ResponseTime:    responseTime,
 			StatusCode:      resp.StatusCode,
