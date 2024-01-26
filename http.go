@@ -13,13 +13,13 @@ import (
 
 const (
 	defaultHTTPTargetRPS          = 1
-	defaultHTTPMaxConcurrentCalls = 10
+	defaultHTTPMaxConcurrentCalls = 1
 	defaultHTTPMethod             = http.MethodGet
 	defaultTimeout                = time.Second * 10
 )
 
 type httpCallerOptions struct {
-	client http.Client
+	client *http.Client
 
 	targetRPS          int
 	maxConcurrentCalls int
@@ -37,81 +37,108 @@ type httpCallerOptions struct {
 	logger Logger
 }
 
+// HTTPCallerOption represents a function type for a functional parameter passed to a NewHttpCaller constructor.
 type HTTPCallerOption func(options *httpCallerOptions)
 
-// TODO: ptr input?
-func WithHTTPCallerClient(client http.Client) HTTPCallerOption {
+// WithHTTPCallerClient is a functional parameter for a WithHTTPCallerClient which specifies a http.Client.
+func WithHTTPCallerClient(client *http.Client) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.client = client
 	}
 }
 
+// WithHTTPCallerTargetRPS is a functional parameter for a WithHTTPCallerClient which specifies a rps. If this option
+// is not provided the default one will be used. You can check default value in const defaultHTTPTargetRPS.
 func WithHTTPCallerTargetRPS(rps int) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.targetRPS = rps
 	}
 }
 
+// WithHTTPCallerMaxConcurrentCalls is a functional parameter for a WithHTTPCallerClient which specifies a number of
+// maximum concurrent calls. If this option is not provided the default one will be used. You can check default value in const
+// defaultHTTPMaxConcurrentCalls.
 func WithHTTPCallerMaxConcurrentCalls(max int) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.maxConcurrentCalls = max
 	}
 }
 
+// WithHTTPCallerHeaders is a functional parameter for a WithHTTPCallerClient which specifies headers that should be
+// set in request.
 func WithHTTPCallerHeaders(headers http.Header) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.headers = headers
 	}
 }
 
+// WithHTTPCallerMethod is a functional parameter for a WithHTTPCallerClient which specifies a method that should be
+// set in request. If this option is not provided the default one will be used. You can check default value in const
+// defaultHTTPMethod.
 func WithHTTPCallerMethod(method string) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.method = method
 	}
 }
 
+// WithHTTPCallerBody is a functional parameter for a WithHTTPCallerClient which specifies a body that should be set
+// in request.
 func WithHTTPCallerBody(body []byte) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.body = body
 	}
 }
 
+// WithHTTPCallerTimeout is a functional parameter for a WithHTTPCallerTimeout which specifies request timeout.
+// If this option is not provided the default one will be used. You can check default value in const defaultTimeout.
 func WithHTTPCallerTimeout(timeout time.Duration) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.timeout = timeout
 	}
 }
 
+// WithHTTPCallerIsValidResponse is a functional parameter for a WithHTTPCallerTimeout which specifies a function that
+// will be used to assess whether a response is valid. If not specified, all responses will be treated as valid.
+// You can read more explanation about this parameter in HTTPCaller annotation.
 func WithHTTPCallerIsValidResponse(isValid func(response *http.Response, body []byte) bool) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.isValidResponse = isValid
 	}
 }
 
+// WithHTTPCallerOnResp is a functional parameter for a WithHTTPCallerTimeout which specifies a callback that will be
+// called when response is received. You can read more explanation about this parameter in HTTPCaller annotation.
 func WithHTTPCallerOnResp(onResp func(*HTTPCallInfo)) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.onResp = onResp
 	}
 }
 
+// WithHTTPCallerOnFinish is a functional parameter for a WithHTTPCallerTimeout which specifies a callback that will be
+// called when probing cycle is finished. You can read more explanation about this parameter in HTTPCaller annotation.
 func WithHTTPCallerOnFinish(onFinish func(statistics *HTTPStatistics)) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.onFinish = onFinish
 	}
 }
 
+// WithHTTPCallerLogger is a functional parameter for a WithHTTPCallerTimeout which specifies a logger.
+// If not specified, logs will be omitted.
 func WithHTTPCallerLogger(logger Logger) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
 		options.logger = logger
 	}
 }
 
+// NewHttpCaller returns a new HTTPCaller. URL parameter is the only required one, other options might be specified via
+// functional parameters, otherwise default values will be used where applicable.
 func NewHttpCaller(url string, options ...HTTPCallerOption) *HTTPCaller {
 	opts := httpCallerOptions{
 		targetRPS:          defaultHTTPTargetRPS,
 		maxConcurrentCalls: defaultHTTPMaxConcurrentCalls,
 		method:             defaultHTTPMethod,
 		timeout:            defaultTimeout,
+		client:             &http.Client{},
 	}
 	for _, opt := range options {
 		opt(&opts)
@@ -143,19 +170,40 @@ func NewHttpCaller(url string, options ...HTTPCallerOption) *HTTPCaller {
 	}
 }
 
+// HTTPCaller represents a prober performing http calls and collecting relevant statistics.
 type HTTPCaller struct {
-	client http.Client
+	client *http.Client
 
-	targetRPS          int
+	// targetRPS is a RPS which prober will try to maintain. You might need to increase maxConcurrentCalls value to
+	// achieve required value.
+	targetRPS int
+
+	// maxConcurrentCalls is a maximum number of calls that might be performed concurrently. In other words,
+	// a number of "workers" that will try to perform probing concurrently.
+	// Default number is specified in defaultHTTPMaxConcurrentCalls
 	maxConcurrentCalls int
 
-	url     string
+	// url is a url which will be used in all probe requests, mandatory in constructor.
+	url string
+
+	// headers are headers that which will be used in all probe requests, default are none.
 	headers http.Header
-	method  string
-	body    []byte
+
+	// method is a http request method which will be used in all probe requests,
+	// default is specified in defaultHTTPMethod
+	method string
+
+	// body is a http request body which will be used in all probe requests, default is none.
+	body []byte
+
+	// timeout is a http call timeout, default is specified in defaultTimeout.
 	timeout time.Duration
 
-	isValidResponse func(response *http.Response, body []byte) bool // TODO: annotate
+	// isValidResponse is a function that will be used to validate whether a response is valid up to clients choice.
+	// You can think of it as a verification that response contains data that you expected. This information will be
+	// passed back in HTTPCallInfo during an onResp callback and HTTPStatistics during an onFinish callback
+	// or a Statistics call.
+	isValidResponse func(response *http.Response, body []byte) bool
 
 	statsMu             sync.Mutex
 	statusCodesCount    map[int]int
@@ -164,15 +212,19 @@ type HTTPCaller struct {
 	dnsLatency          statsSet
 	connLatency         statsSet
 	tlsLatency          statsSet
-	pureCallLatency     statsSet // TODO: annotate
+	pureCallLatency     statsSet
 
 	workChan chan struct{}
 	doneChan chan struct{}
 	doneWg   sync.WaitGroup
 
-	onResp   func(*HTTPCallInfo)
+	// onResp is a callback, which is called when response is received
+	onResp func(*HTTPCallInfo)
+
+	// onFinish is a callback, which is called when probing session is finished
 	onFinish func(*HTTPStatistics)
 
+	// logger is a logger implementation, default is none.
 	logger Logger
 }
 
@@ -185,7 +237,7 @@ type statsSet struct {
 	stdDev   time.Duration
 }
 
-func (s statsSet) toPublicSet() HTTPStatisticsSet {
+func (s *statsSet) toPublicSet() HTTPStatisticsSet {
 	return HTTPStatisticsSet{
 		Min:    s.min,
 		Max:    s.max,
@@ -212,29 +264,37 @@ func (s *statsSet) update(newVal time.Duration) {
 	s.stdDev, s.stdDevM2, s.avg = calculateStdDev(s.count, newVal, s.avg, s.stdDevM2)
 }
 
+// Stop gracefully stops the execution of a HTTPCaller.
 func (c *HTTPCaller) Stop() {
 	close(c.doneChan)
 	c.doneWg.Wait()
 }
 
-// TODO: think about checks for overflow etc
-func (c *HTTPCaller) RunWithContext(ctx context.Context) error {
-	c.runWorkCreator(ctx)
+// Run starts execution of a probing.
+func (c *HTTPCaller) Run() {
+	c.run(context.Background())
+}
+
+// RunWithContext starts execution of a probing and allows providing a context.
+func (c *HTTPCaller) RunWithContext(ctx context.Context) {
+	c.run(ctx)
+}
+
+func (c *HTTPCaller) run(ctx context.Context) {
+	c.runWorkScheduler(ctx)
 	c.runCallers(ctx)
 	c.doneWg.Wait()
 	if c.onFinish != nil {
 		c.onFinish(c.Statistics())
 	}
-	return nil
 }
 
-// TODO: proper annotation & explanation
+// getCallFrequency calculates a frequency which should be used to maintain required RPS.
 func (c *HTTPCaller) getCallFrequency() time.Duration {
 	return time.Second / time.Duration(c.targetRPS)
 }
 
-// TODO: rename
-func (c *HTTPCaller) runWorkCreator(ctx context.Context) {
+func (c *HTTPCaller) runWorkScheduler(ctx context.Context) {
 	c.doneWg.Add(1)
 	go func() {
 		defer c.doneWg.Done()
@@ -382,6 +442,7 @@ func (c *HTTPCaller) makeCall(ctx context.Context) error {
 	return nil
 }
 
+// Statistics returns current aggregation statistics of the ongoing probing session.
 func (c *HTTPCaller) Statistics() *HTTPStatistics {
 	c.statsMu.Lock() // TODO: rwMu?
 	defer c.statsMu.Unlock()
@@ -403,34 +464,75 @@ func (c *HTTPCaller) Statistics() *HTTPStatistics {
 	}
 }
 
-// TODO: do we want to provide a resopnse? Think about it
+// HTTPCallInfo represents a data set which passed as a function argument to an onResp callback.
 type HTTPCallInfo struct {
-	RequestTime                   time.Time
-	ResponseTime                  time.Time
-	DNSStartTime                  time.Time
-	DNSDoneTime                   time.Time
-	ConnStartTime                 time.Time
-	ConnDoneTime                  time.Time
-	TLSStartTime                  time.Time
-	TLSEndTime                    time.Time
-	RequestHeadersWrittenTime     time.Time
+	// RequestTime is a time when an overall http call was started.
+	RequestTime time.Time
+
+	// ResponseTime is a time when an overall http call was finished.
+	ResponseTime time.Time
+
+	// DNSStartTime is a time when a dns request started. Will be equal to time.Zero if dns resolving wasn't triggered.
+	DNSStartTime time.Time
+
+	// DNSDoneTime is a time when a dns response received. Will be equal to time.Zero if dns resolving wasn't triggered.
+	DNSDoneTime time.Time
+
+	// ConnStartTime is a time when a connection establishing started.
+	ConnStartTime time.Time
+
+	// ConnDoneTime is a time when a connection was successfully established.
+	ConnDoneTime time.Time
+
+	// TLSStartTime is a time when a TLS handshake started. Will be equal to time.Zero if it's not a https call.
+	TLSStartTime time.Time
+
+	// TLSEndTime is a time when a TLS handshake finished. Will be equal to time.Zero if it's not a https call.
+	TLSEndTime time.Time
+
+	// RequestHeadersWrittenTime is a time when all request headers were written. Can be used in pair
+	// with ResponseFirstByteReceivedTime to calculate "pure" latency. TODO: think about a better term then "pure"
+	RequestHeadersWrittenTime time.Time
+
+	// ResponseFirstByteReceivedTime is a time when first response bytes were received. Can be used in pair with
+	// RequestHeadersWrittenTime to calculate "pure" latency. TODO: think about a better term then "pure"
 	ResponseFirstByteReceivedTime time.Time
 
-	StatusCode      int
+	// StatusCode is a response status code
+	StatusCode int
+
+	// IsValidResponse represents a fact of whether a response is treated as valid. You can read more about it in
+	// HTTPCaller annotation.
 	IsValidResponse bool // TODO: think about the naming here, ANNOTATE!
 }
 
-// TODO: annotate all fields
+// HTTPStatistics represents the overall probing session statistics.
 type HTTPStatistics struct {
-	StatusCodesCount    map[int]int
-	CallsCount          int
+	// StatusCodesCount contains pairs of codes with counters of their appearances, where a key is a code and value is
+	// a counter
+	StatusCodesCount map[int]int
+
+	// CallsCount is an overall number of performed calls
+	CallsCount int
+
+	// ValidResponsesCount is a number of responses that were treated a valid. You can read more about it in
+	// HTTPCaller annotation.
 	ValidResponsesCount int
 
-	TotalLatency    HTTPStatisticsSet
-	DNSLatency      HTTPStatisticsSet
-	ConnLatency     HTTPStatisticsSet
-	TLSLatency      HTTPStatisticsSet
-	PureCallLatency HTTPStatisticsSet // TODO: think about name
+	// TotalLatency contains statistical aggregations for a full call latencies.
+	TotalLatency HTTPStatisticsSet
+
+	// DNSLatency contains statistical aggregations for a dns resolvement.
+	DNSLatency HTTPStatisticsSet
+
+	// ConnLatency contains statistical aggregations for connection establishments.
+	ConnLatency HTTPStatisticsSet
+
+	// TLSLatency contains statistical aggregations for tls handshakes.
+	TLSLatency HTTPStatisticsSet
+
+	// PureCallLatency contains statistical aggregations for pure call latencies.
+	PureCallLatency HTTPStatisticsSet // TODO: think about a better term then "pure"
 }
 
 func formHTTPCallInfo(statusCode int, isValidResponse bool, statTimers callStatTimers) *HTTPCallInfo {
@@ -451,6 +553,7 @@ func formHTTPCallInfo(statusCode int, isValidResponse bool, statTimers callStatT
 	}
 }
 
+// HTTPStatisticsSet is a common reused set of standard statistical functions.
 type HTTPStatisticsSet struct {
 	Min    time.Duration
 	Max    time.Duration
