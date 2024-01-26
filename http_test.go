@@ -9,7 +9,7 @@ import (
 )
 
 func TestHTTPCaller_RunWithContext(t *testing.T) {
-	caller := NewHttpCaller("https://google.com", http.MethodGet)
+	caller := NewHttpCaller("https://google.com", http.MethodGet, nil)
 	caller.SetTargetRPS(5)
 	caller.SetMaxConcurrentCalls(2)
 

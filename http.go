@@ -1,7 +1,9 @@
 package probing
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -13,12 +15,13 @@ const (
 	defaultTimeout                = time.Second * 10
 )
 
-func NewHttpCaller(url string, method string) *HTTPCaller {
+func NewHttpCaller(url string, method string, body []byte) *HTTPCaller {
 	return &HTTPCaller{
 		TargetRPS:          defaultHTTPTargetRPS,          // TODO: describe this default
 		MaxConcurrentCalls: defaultHTTPMaxConcurrentCalls, // TODO: describe this default
 		URL:                url,
 		Method:             method,
+		Body:               body,
 		Timeout:            defaultTimeout, // TODO: describe this default
 
 		workChan: make(chan struct{}, defaultHTTPMaxConcurrentCalls),
@@ -34,26 +37,31 @@ type HTTPCaller struct {
 	URL     string
 	Headers map[string]string
 	Method  string
+	Body    []byte
 	Timeout time.Duration
 
-	// TODO: valid Headers check
-	// TODO: valid Body check
+	IsValidResponse func(response *http.Response, body []byte) bool // TODO: annotate
 
 	client http.Client // TODO: allow client interface
 
-	statsMu          sync.Mutex
-	statusCodesCount map[int]int
-	callsCount       int
-	minLatency       time.Duration
-	maxLatency       time.Duration
-	avgLatency       time.Duration
-	stdDevLatency    time.Duration
+	statsMu             sync.Mutex
+	statusCodesCount    map[int]int
+	callsCount          int
+	validResponsesCount int
+	minLatency          time.Duration
+	maxLatency          time.Duration
+	avgLatency          time.Duration
+	stdDevM2Latency     time.Duration
+	stdDevLatency       time.Duration
 
 	workChan chan struct{}
 	doneChan chan struct{}
 	doneWg   sync.WaitGroup
 
 	logger Logger
+
+	OnResp   func(*HTTPCallInfo)
+	OnFinish func(*HTTPStatistics)
 }
 
 func (c *HTTPCaller) SetTimeout(timeout time.Duration) {
@@ -84,6 +92,9 @@ func (c *HTTPCaller) RunWithContext(ctx context.Context) error {
 	c.runWorkCreator(ctx)
 	c.runCallers(ctx)
 	c.doneWg.Wait()
+	if c.OnFinish != nil {
+		c.OnFinish(c.Statistics())
+	}
 	return nil
 }
 
@@ -104,6 +115,8 @@ func (c *HTTPCaller) runWorkCreator(ctx context.Context) {
 			case <-ticker.C:
 				c.workChan <- struct{}{}
 			case <-ctx.Done():
+				return
+			case <-c.doneChan:
 				return
 			}
 		}
@@ -127,6 +140,8 @@ func (c *HTTPCaller) runCallers(ctx context.Context) {
 					}
 				case <-ctx.Done():
 					return
+				case <-c.doneChan:
+					return
 				}
 			}
 		}()
@@ -138,7 +153,7 @@ func (c *HTTPCaller) makeCall(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, c.Timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, c.Method, c.URL, nil) // TODO: support req body
+	req, err := http.NewRequestWithContext(ctx, c.Method, c.URL, bytes.NewReader(c.Body))
 	if err != nil {
 		return err // TODO: wrap
 	}
@@ -146,25 +161,84 @@ func (c *HTTPCaller) makeCall(ctx context.Context) error {
 		req.Header.Add(header, value)
 	}
 
-	callStart := time.Now()
+	requestTime := time.Now()
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
 	}
+	body, err := io.ReadAll(resp.Body) // TODO: ok? think about it
+	if err != nil {
+		return err // TODO: wrap
+	}
 	resp.Body.Close() // TODO: err?
-	latency := time.Now().Sub(callStart)
+	responseTime := time.Now()
+	latency := responseTime.Sub(requestTime)
+	isValidResponse := true
+	if c.IsValidResponse != nil {
+		isValidResponse = c.IsValidResponse(resp, body)
+	}
 
+	// TODO: channels?
 	c.statsMu.Lock()
 	defer c.statsMu.Unlock()
 	c.statusCodesCount[resp.StatusCode]++
 	c.callsCount++
+	if isValidResponse {
+		c.validResponsesCount++
+	}
 	if c.callsCount == 1 || latency < c.minLatency {
 		c.minLatency = latency
 	}
 	if latency > c.maxLatency {
 		c.maxLatency = latency
 	}
-	// TODO: calc avg & stddev
+	c.stdDevLatency, c.stdDevM2Latency, c.avgLatency = calculateStdDev(c.callsCount, latency, c.avgLatency, c.stdDevM2Latency)
 
+	if c.OnResp != nil {
+		c.OnResp(&HTTPCallInfo{
+			RequestTime:     requestTime,
+			ResponseTime:    responseTime,
+			StatusCode:      resp.StatusCode,
+			IsValidResponse: isValidResponse,
+		})
+	}
 	return nil
+}
+
+func (c *HTTPCaller) Statistics() *HTTPStatistics {
+	c.statsMu.Lock() // TODO: rwMu?
+	defer c.statsMu.Unlock()
+
+	statusCodesCount := make(map[int]int, len(c.statusCodesCount))
+	for k, v := range c.statusCodesCount {
+		statusCodesCount[k] = v
+	}
+	return &HTTPStatistics{
+		StatusCodesCount:    statusCodesCount,
+		CallsCount:          c.callsCount,
+		ValidResponsesCount: c.validResponsesCount,
+		MinLatency:          c.minLatency,
+		MaxLatency:          c.maxLatency,
+		AvgLatency:          c.avgLatency,
+		StdDevLatency:       c.stdDevLatency,
+	}
+}
+
+// TODO: do we want to provide a resopnse? Think about it
+type HTTPCallInfo struct {
+	RequestTime     time.Time
+	ResponseTime    time.Time
+	StatusCode      int
+	IsValidResponse bool // TODO: think about the naming here, ANNOTATE!
+}
+
+// TODO: annotate all fields
+type HTTPStatistics struct {
+	StatusCodesCount    map[int]int
+	CallsCount          int
+	ValidResponsesCount int
+	MinLatency          time.Duration
+	MaxLatency          time.Duration
+	AvgLatency          time.Duration
+	StdDevLatency       time.Duration
 }
