@@ -4,75 +4,31 @@ import (
 	"context"
 	"crypto/tls"
 	"net/http"
-	"net/http/httptrace"
+	"net/http/httptest"
 	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
 )
 
-var testHTTPClient = http.Client{
-	Transport: &http.Transport{
-		DisableKeepAlives: true,
-	},
-	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	},
+// TODO: figure out how to test onDNS callback
+func getTestHTTPClientServer() (*http.Client, *httptest.Server) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	return srv.Client(), srv
 }
 
 func TestHTTPCaller_MakeCall_OnReq(t *testing.T) {
+	client, srv := getTestHTTPClientServer()
+	defer srv.Close()
+
 	var callbackCalled bool
-	httpCaller := NewHttpCaller("https://google.com",
-		WithHTTPCallerClient(&testHTTPClient),
+	httpCaller := NewHttpCaller(srv.URL,
+		WithHTTPCallerClient(client),
 		WithHTTPCallerOnReq(func(suite *TraceSuite) {
 			AssertTimeNonZero(t, suite.generalStart)
 			AssertTimeZero(t, suite.generalEnd)
-			AssertTimeZero(t, suite.dnsStart)
-			AssertTimeZero(t, suite.dnsEnd)
-			AssertTimeZero(t, suite.connStart)
-			AssertTimeZero(t, suite.connEnd)
-			AssertTimeZero(t, suite.tlsStart)
-			AssertTimeZero(t, suite.tlsEnd)
-			AssertTimeZero(t, suite.wroteHeaders)
-			AssertTimeZero(t, suite.firstByteReceived)
-			callbackCalled = true
-		}))
-	err := httpCaller.makeCall(context.Background())
-	AssertNoError(t, err)
-	AssertTrue(t, callbackCalled)
-}
-
-func TestHTTPCaller_MakeCall_OnDNSStart(t *testing.T) {
-	var callbackCalled bool
-	httpCaller := NewHttpCaller("https://google.com",
-		WithHTTPCallerClient(&testHTTPClient),
-		WithHTTPCallerOnDNSStart(func(suite *TraceSuite, info httptrace.DNSStartInfo) {
-			AssertTimeNonZero(t, suite.generalStart)
-			AssertTimeZero(t, suite.generalEnd)
-			AssertTimeNonZero(t, suite.dnsStart)
-			AssertTimeZero(t, suite.dnsEnd)
-			AssertTimeZero(t, suite.connStart)
-			AssertTimeZero(t, suite.connEnd)
-			AssertTimeZero(t, suite.tlsStart)
-			AssertTimeZero(t, suite.tlsEnd)
-			AssertTimeZero(t, suite.wroteHeaders)
-			AssertTimeZero(t, suite.firstByteReceived)
-			callbackCalled = true
-		}))
-	err := httpCaller.makeCall(context.Background())
-	AssertNoError(t, err)
-	AssertTrue(t, callbackCalled)
-}
-
-func TestHTTPCaller_MakeCall_OnDNSDone(t *testing.T) {
-	var callbackCalled bool
-	httpCaller := NewHttpCaller("https://google.com",
-		WithHTTPCallerClient(&testHTTPClient),
-		WithHTTPCallerOnDNSDone(func(suite *TraceSuite, info httptrace.DNSDoneInfo) {
-			AssertTimeNonZero(t, suite.generalStart)
-			AssertTimeZero(t, suite.generalEnd)
-			AssertTimeNonZero(t, suite.dnsStart)
-			AssertTimeNonZero(t, suite.dnsEnd)
 			AssertTimeZero(t, suite.connStart)
 			AssertTimeZero(t, suite.connEnd)
 			AssertTimeZero(t, suite.tlsStart)
@@ -87,14 +43,15 @@ func TestHTTPCaller_MakeCall_OnDNSDone(t *testing.T) {
 }
 
 func TestHTTPCaller_MakeCall_OnConnStart(t *testing.T) {
+	client, srv := getTestHTTPClientServer()
+	defer srv.Close()
+
 	var callbackCalled bool
-	httpCaller := NewHttpCaller("https://google.com",
-		WithHTTPCallerClient(&testHTTPClient),
+	httpCaller := NewHttpCaller(srv.URL,
+		WithHTTPCallerClient(client),
 		WithHTTPCallerOnConnStart(func(suite *TraceSuite, network, addr string) {
 			AssertTimeNonZero(t, suite.generalStart)
 			AssertTimeZero(t, suite.generalEnd)
-			AssertTimeNonZero(t, suite.dnsStart)
-			AssertTimeNonZero(t, suite.dnsEnd)
 			AssertTimeNonZero(t, suite.connStart)
 			AssertTimeZero(t, suite.connEnd)
 			AssertTimeZero(t, suite.tlsStart)
@@ -109,14 +66,15 @@ func TestHTTPCaller_MakeCall_OnConnStart(t *testing.T) {
 }
 
 func TestHTTPCaller_MakeCall_OnConnDone(t *testing.T) {
+	client, srv := getTestHTTPClientServer()
+	defer srv.Close()
+
 	var callbackCalled bool
-	httpCaller := NewHttpCaller("https://google.com",
-		WithHTTPCallerClient(&testHTTPClient),
+	httpCaller := NewHttpCaller(srv.URL,
+		WithHTTPCallerClient(client),
 		WithHTTPCallerOnConnDone(func(suite *TraceSuite, network, addr string, err error) {
 			AssertTimeNonZero(t, suite.generalStart)
 			AssertTimeZero(t, suite.generalEnd)
-			AssertTimeNonZero(t, suite.dnsStart)
-			AssertTimeNonZero(t, suite.dnsEnd)
 			AssertTimeNonZero(t, suite.connStart)
 			AssertTimeNonZero(t, suite.connEnd)
 			AssertTimeZero(t, suite.tlsStart)
@@ -131,14 +89,15 @@ func TestHTTPCaller_MakeCall_OnConnDone(t *testing.T) {
 }
 
 func TestHTTPCaller_MakeCall_OnTLSStart(t *testing.T) {
+	client, srv := getTestHTTPClientServer()
+	defer srv.Close()
+
 	var callbackCalled bool
-	httpCaller := NewHttpCaller("https://google.com",
-		WithHTTPCallerClient(&testHTTPClient),
+	httpCaller := NewHttpCaller(srv.URL,
+		WithHTTPCallerClient(client),
 		WithHTTPCallerOnTLSStart(func(suite *TraceSuite) {
 			AssertTimeNonZero(t, suite.generalStart)
 			AssertTimeZero(t, suite.generalEnd)
-			AssertTimeNonZero(t, suite.dnsStart)
-			AssertTimeNonZero(t, suite.dnsEnd)
 			AssertTimeNonZero(t, suite.connStart)
 			AssertTimeNonZero(t, suite.connEnd)
 			AssertTimeNonZero(t, suite.tlsStart)
@@ -153,14 +112,15 @@ func TestHTTPCaller_MakeCall_OnTLSStart(t *testing.T) {
 }
 
 func TestHTTPCaller_MakeCall_OnTLSDone(t *testing.T) {
+	client, srv := getTestHTTPClientServer()
+	defer srv.Close()
+
 	var callbackCalled bool
-	httpCaller := NewHttpCaller("https://google.com",
-		WithHTTPCallerClient(&testHTTPClient),
+	httpCaller := NewHttpCaller(srv.URL,
+		WithHTTPCallerClient(client),
 		WithHTTPCallerOnTLSDone(func(suite *TraceSuite, state tls.ConnectionState, err error) {
 			AssertTimeNonZero(t, suite.generalStart)
 			AssertTimeZero(t, suite.generalEnd)
-			AssertTimeNonZero(t, suite.dnsStart)
-			AssertTimeNonZero(t, suite.dnsEnd)
 			AssertTimeNonZero(t, suite.connStart)
 			AssertTimeNonZero(t, suite.connEnd)
 			AssertTimeNonZero(t, suite.tlsStart)
@@ -175,14 +135,15 @@ func TestHTTPCaller_MakeCall_OnTLSDone(t *testing.T) {
 }
 
 func TestHTTPCaller_MakeCall_OnWroteHeaders(t *testing.T) {
+	client, srv := getTestHTTPClientServer()
+	defer srv.Close()
+
 	var callbackCalled bool
-	httpCaller := NewHttpCaller("https://google.com",
-		WithHTTPCallerClient(&testHTTPClient),
+	httpCaller := NewHttpCaller(srv.URL,
+		WithHTTPCallerClient(client),
 		WithHTTPCallerOnWroteRequest(func(suite *TraceSuite) {
 			AssertTimeNonZero(t, suite.generalStart)
 			AssertTimeZero(t, suite.generalEnd)
-			AssertTimeNonZero(t, suite.dnsStart)
-			AssertTimeNonZero(t, suite.dnsEnd)
 			AssertTimeNonZero(t, suite.connStart)
 			AssertTimeNonZero(t, suite.connEnd)
 			AssertTimeNonZero(t, suite.tlsStart)
@@ -197,14 +158,15 @@ func TestHTTPCaller_MakeCall_OnWroteHeaders(t *testing.T) {
 }
 
 func TestHTTPCaller_MakeCall_OnFirstByteReceived(t *testing.T) {
+	client, srv := getTestHTTPClientServer()
+	defer srv.Close()
+
 	var callbackCalled bool
-	httpCaller := NewHttpCaller("https://google.com",
-		WithHTTPCallerClient(&testHTTPClient),
+	httpCaller := NewHttpCaller(srv.URL,
+		WithHTTPCallerClient(client),
 		WithHTTPCallerOnFirstByteReceived(func(suite *TraceSuite) {
 			AssertTimeNonZero(t, suite.generalStart)
 			AssertTimeZero(t, suite.generalEnd)
-			AssertTimeNonZero(t, suite.dnsStart)
-			AssertTimeNonZero(t, suite.dnsEnd)
 			AssertTimeNonZero(t, suite.connStart)
 			AssertTimeNonZero(t, suite.connEnd)
 			AssertTimeNonZero(t, suite.tlsStart)
@@ -219,14 +181,15 @@ func TestHTTPCaller_MakeCall_OnFirstByteReceived(t *testing.T) {
 }
 
 func TestHTTPCaller_MakeCall_OnResp(t *testing.T) {
+	client, srv := getTestHTTPClientServer()
+	defer srv.Close()
+
 	var callbackCalled bool
-	httpCaller := NewHttpCaller("https://google.com",
-		WithHTTPCallerClient(&testHTTPClient),
+	httpCaller := NewHttpCaller(srv.URL,
+		WithHTTPCallerClient(client),
 		WithHTTPCallerOnResp(func(suite *TraceSuite, info *HTTPCallInfo) {
 			AssertTimeNonZero(t, suite.generalStart)
 			AssertTimeNonZero(t, suite.generalEnd)
-			AssertTimeNonZero(t, suite.dnsStart)
-			AssertTimeNonZero(t, suite.dnsEnd)
 			AssertTimeNonZero(t, suite.connStart)
 			AssertTimeNonZero(t, suite.connEnd)
 			AssertTimeNonZero(t, suite.tlsStart)
@@ -241,10 +204,13 @@ func TestHTTPCaller_MakeCall_OnResp(t *testing.T) {
 }
 
 func TestHTTPCaller_MakeCall_IsValidResponse(t *testing.T) {
+	client, srv := getTestHTTPClientServer()
+	defer srv.Close()
+
 	t.Run("no callback", func(t *testing.T) {
 		var callbackCalled bool
-		httpCaller := NewHttpCaller("https://google.com",
-			WithHTTPCallerClient(&testHTTPClient),
+		httpCaller := NewHttpCaller(srv.URL,
+			WithHTTPCallerClient(client),
 			WithHTTPCallerOnResp(func(suite *TraceSuite, info *HTTPCallInfo) {
 				AssertTrue(t, info.IsValidResponse)
 				callbackCalled = true
@@ -257,8 +223,8 @@ func TestHTTPCaller_MakeCall_IsValidResponse(t *testing.T) {
 
 	t.Run("false callback", func(t *testing.T) {
 		var callbackCalled bool
-		httpCaller := NewHttpCaller("https://google.com",
-			WithHTTPCallerClient(&testHTTPClient),
+		httpCaller := NewHttpCaller(srv.URL,
+			WithHTTPCallerClient(client),
 			WithHTTPCallerIsValidResponse(func(response *http.Response, body []byte) bool {
 				return false
 			}),
@@ -274,8 +240,8 @@ func TestHTTPCaller_MakeCall_IsValidResponse(t *testing.T) {
 
 	t.Run("true callback", func(t *testing.T) {
 		var callbackCalled bool
-		httpCaller := NewHttpCaller("https://google.com",
-			WithHTTPCallerClient(&testHTTPClient),
+		httpCaller := NewHttpCaller(srv.URL,
+			WithHTTPCallerClient(client),
 			WithHTTPCallerIsValidResponse(func(response *http.Response, body []byte) bool {
 				return true
 			}),
@@ -291,12 +257,15 @@ func TestHTTPCaller_MakeCall_IsValidResponse(t *testing.T) {
 }
 
 func TestHTTPCaller_RunWithContext(t *testing.T) {
+	client, srv := getTestHTTPClientServer()
+	defer srv.Close()
+
 	var callsCount int
 	var callsCountMu sync.Mutex
-	httpCaller := NewHttpCaller("https://google.com",
+	httpCaller := NewHttpCaller(srv.URL,
 		WithHTTPCallerMaxConcurrentCalls(5),
 		WithHTTPCallerCallFrequency(time.Second/5),
-		WithHTTPCallerClient(&testHTTPClient),
+		WithHTTPCallerClient(client),
 		WithHTTPCallerTimeout(time.Second),
 		WithHTTPCallerOnReq(func(suite *TraceSuite) {
 			callsCountMu.Lock()
