@@ -133,6 +133,53 @@ There is no support for Plan 9. This is because the entire `x/net/ipv4`
 and `x/net/ipv6` packages are not implemented by the Go programming
 language.
 
+## HTTP
+
+This library also provides support for HTTP probing.
+Here is a trivial example:
+
+```go
+httpCaller := probing.NewHttpCaller("https://www.google.com",
+    probing.WithHTTPCallerCallFrequency(time.Second),
+    probing.WithHTTPCallerOnResp(func(suite *probing.TraceSuite, info *probing.HTTPCallInfo) {
+        fmt.Printf("got resp, status code: %d, latency: %s\n",
+            info.StatusCode,
+            suite.GetGeneralEnd().Sub(suite.GetGeneralStart()),
+        )
+    }),
+)
+
+// Listen for Ctrl-C.
+c := make(chan os.Signal, 1)
+signal.Notify(c, os.Interrupt)
+go func() {
+    <-c
+    httpCaller.Stop()
+}()
+httpCaller.Run()
+```
+
+Library provides a rich list of options available for a probing. You can check the full list of available
+options in a generated doc.
+
+### Callbacks
+
+HTTPCaller uses `net/http/httptrace` pkg to provide an API to track specific request event, e.g. tls handshake start.
+It is highly recommended to check the httptrace library [doc](https://pkg.go.dev/net/http/httptrace) to understand
+the purpose of provided callbacks. Nevertheless, httptrace callbacks are concurrent-unsafe, our implementation provides
+a concurrent-safe API. In addition to that, each callback contains a TraceSuite object which provides an Extra field
+which you can use to propagate your data across them and a number of timer fields, which are set prior to the execution of a
+corresponding callback.
+
+### Target RPS & performance
+
+Library provides two options, allowing to manipulate your call load: `callFrequency` & `maxConcurrentCalls`.
+In case you set `callFrequency` to a value X, but it can't be achieved during the execution - you will need to
+try increasing a number of `maxConcurrentCalls`. Moreover, your callbacks might directly influence an execution
+performance.
+
+For a full documentation, please refer to the generated [doc](https://pkg.go.dev/github.com/prometheus-community/pro-bing).
+
 ## Maintainers and Getting Help:
 
 This repo was originally in the personal account of
