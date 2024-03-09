@@ -816,3 +816,21 @@ func TestRunWithBackgroundContext(t *testing.T) {
 	}
 	AssertTrue(t, stats.PacketsRecv == 10)
 }
+
+func TestSetResolveTimeout(t *testing.T) {
+	p := New("www.google.com")
+	p.Count = 3
+	p.Timeout = 5 * time.Second
+	p.ResolveTimeout = 2 * time.Second
+	err := p.Resolve()
+	AssertNoError(t, err)
+
+	err = p.SetAddr("www.google.com ")
+	AssertError(t, err, "")
+
+	err = p.SetAddr("127.0.0.1 ")
+	AssertError(t, err, "")
+
+	err = p.SetAddr("127.0.0.1")
+	AssertNoError(t, err)
+}
