@@ -28,7 +28,7 @@ func TestProcessPacket(t *testing.T) {
 		shouldBe1++
 	}
 
-	currentUUID := pinger.getCurrentTrackerUUID()
+	currentUUID, sequenceNum := pinger.awaitingSequences.next()
 	uuidEncoded, err := currentUUID.MarshalBinary()
 	if err != nil {
 		t.Fatalf("unable to marshal UUID binary: %s", err)
@@ -40,10 +40,9 @@ func TestProcessPacket(t *testing.T) {
 
 	body := &icmp.Echo{
 		ID:   pinger.id,
-		Seq:  pinger.sequence,
+		Seq:  sequenceNum,
 		Data: data,
 	}
-	pinger.awaitingSequences[currentUUID][pinger.sequence] = struct{}{}
 
 	msg := &icmp.Message{
 		Type: ipv4.ICMPTypeEchoReply,
@@ -595,7 +594,8 @@ func TestProcessPacket_IgnoresDuplicateSequence(t *testing.T) {
 		dups++
 	}
 
-	currentUUID := pinger.getCurrentTrackerUUID()
+	// register the sequence as sent
+	currentUUID, sequenceNum := pinger.awaitingSequences.next()
 	uuidEncoded, err := currentUUID.MarshalBinary()
 	if err != nil {
 		t.Fatalf("unable to marshal UUID binary: %s", err)
@@ -607,11 +607,9 @@ func TestProcessPacket_IgnoresDuplicateSequence(t *testing.T) {
 
 	body := &icmp.Echo{
 		ID:   123,
-		Seq:  0,
+		Seq:  sequenceNum,
 		Data: data,
 	}
-	// register the sequence as sent
-	pinger.awaitingSequences[currentUUID][0] = struct{}{}
 
 	msg := &icmp.Message{
 		Type: ipv4.ICMPTypeEchoReply,
@@ -815,4 +813,22 @@ func TestRunWithBackgroundContext(t *testing.T) {
 		t.FailNow()
 	}
 	AssertTrue(t, stats.PacketsRecv == 10)
+}
+
+func TestBlackhole(t *testing.T) {
+	pinger := New("127.0.0.2")
+	pinger.Count = 99
+	pinger.Interval = time.Microsecond
+	pinger.Timeout = time.Second
+	pinger.SetOutstandingPacketsPolicy(RemoveAfterMaxItems(10))
+
+	err := pinger.Resolve()
+	AssertNoError(t, err)
+
+	conn := new(testPacketConn)
+
+	err = pinger.run(context.Background(), conn)
+	AssertNoError(t, err)
+
+	AssertTrue(t, pinger.awaitingSequences.totalOutstandingSequences == 9)
 }
