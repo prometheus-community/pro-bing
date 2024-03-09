@@ -16,6 +16,10 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
+var testAddr net.Addr = &net.IPAddr{
+	IP: net.IPv4(127, 0, 0, 1),
+}
+
 func TestProcessPacket(t *testing.T) {
 	pinger := makeTestPinger()
 	shouldBe1 := 0
@@ -49,11 +53,7 @@ func TestProcessPacket(t *testing.T) {
 
 	msgBytes, _ := msg.Marshal(nil)
 
-	pkt := packet{
-		nbytes: len(msgBytes),
-		bytes:  msgBytes,
-		ttl:    24,
-	}
+	pkt := makeTestPacket(msgBytes)
 
 	err = pinger.processPacket(&pkt)
 	AssertNoError(t, err)
@@ -91,11 +91,7 @@ func TestProcessPacket_IgnoreNonEchoReplies(t *testing.T) {
 
 	msgBytes, _ := msg.Marshal(nil)
 
-	pkt := packet{
-		nbytes: len(msgBytes),
-		bytes:  msgBytes,
-		ttl:    24,
-	}
+	pkt := makeTestPacket(msgBytes)
 
 	err = pinger.processPacket(&pkt)
 	AssertNoError(t, err)
@@ -134,11 +130,7 @@ func TestProcessPacket_IDMismatch(t *testing.T) {
 
 	msgBytes, _ := msg.Marshal(nil)
 
-	pkt := packet{
-		nbytes: len(msgBytes),
-		bytes:  msgBytes,
-		ttl:    24,
-	}
+	pkt := makeTestPacket(msgBytes)
 
 	err = pinger.processPacket(&pkt)
 	AssertNoError(t, err)
@@ -176,11 +168,7 @@ func TestProcessPacket_TrackerMismatch(t *testing.T) {
 
 	msgBytes, _ := msg.Marshal(nil)
 
-	pkt := packet{
-		nbytes: len(msgBytes),
-		bytes:  msgBytes,
-		ttl:    24,
-	}
+	pkt := makeTestPacket(msgBytes)
 
 	err = pinger.processPacket(&pkt)
 	AssertNoError(t, err)
@@ -214,11 +202,7 @@ func TestProcessPacket_LargePacket(t *testing.T) {
 
 	msgBytes, _ := msg.Marshal(nil)
 
-	pkt := packet{
-		nbytes: len(msgBytes),
-		bytes:  msgBytes,
-		ttl:    24,
-	}
+	pkt := makeTestPacket(msgBytes)
 
 	err = pinger.processPacket(&pkt)
 	AssertNoError(t, err)
@@ -242,11 +226,7 @@ func TestProcessPacket_PacketTooSmall(t *testing.T) {
 
 	msgBytes, _ := msg.Marshal(nil)
 
-	pkt := packet{
-		nbytes: len(msgBytes),
-		bytes:  msgBytes,
-		ttl:    24,
-	}
+	pkt := makeTestPacket(msgBytes)
 
 	err := pinger.processPacket(&pkt)
 	AssertError(t, err, "")
@@ -506,6 +486,16 @@ func makeTestPinger() *Pinger {
 	return pinger
 }
 
+// makeTestPacket emulates a packet with the message msg which come from testAddr
+func makeTestPacket(msg []byte) packet {
+	return packet{
+		bytes:  msg,
+		nbytes: len(msg),
+		ttl:    24,
+		addr:   testAddr,
+	}
+}
+
 func AssertNoError(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
@@ -583,11 +573,7 @@ func BenchmarkProcessPacket(b *testing.B) {
 
 	msgBytes, _ := msg.Marshal(nil)
 
-	pkt := packet{
-		nbytes: len(msgBytes),
-		bytes:  msgBytes,
-		ttl:    24,
-	}
+	pkt := makeTestPacket(msgBytes)
 
 	for k := 0; k < b.N; k++ {
 		pinger.processPacket(&pkt)
@@ -635,11 +621,7 @@ func TestProcessPacket_IgnoresDuplicateSequence(t *testing.T) {
 
 	msgBytes, _ := msg.Marshal(nil)
 
-	pkt := packet{
-		nbytes: len(msgBytes),
-		bytes:  msgBytes,
-		ttl:    24,
-	}
+	pkt := makeTestPacket(msgBytes)
 
 	err = pinger.processPacket(&pkt)
 	AssertNoError(t, err)
@@ -661,9 +643,10 @@ func (c testPacketConn) SetReadDeadline(t time.Time) error { return nil }
 func (c testPacketConn) SetTTL(t int)                      {}
 func (c testPacketConn) SetMark(m uint) error              { return nil }
 func (c testPacketConn) SetDoNotFragment() error           { return nil }
+func (c testPacketConn) SetBroadcastFlag() error           { return nil }
 
 func (c testPacketConn) ReadFrom(b []byte) (n int, ttl int, src net.Addr, err error) {
-	return 0, 0, nil, nil
+	return 0, 0, testAddr, nil
 }
 
 func (c testPacketConn) WriteTo(b []byte, dst net.Addr) (int, error) {
@@ -704,7 +687,7 @@ type testPacketConnBadRead struct {
 }
 
 func (c testPacketConnBadRead) ReadFrom(b []byte) (n int, ttl int, src net.Addr, err error) {
-	return 0, 0, nil, errors.New("bad read")
+	return 0, 0, testAddr, errors.New("bad read")
 }
 
 func TestRunBadRead(t *testing.T) {
@@ -750,7 +733,7 @@ func (c *testPacketConnOK) ReadFrom(b []byte) (n int, ttl int, src net.Addr, err
 	c.m.Lock()
 	defer c.m.Unlock()
 	if atomic.LoadInt32(&c.writeDone) == 0 {
-		return 0, 0, nil, nil
+		return 0, 0, testAddr, nil
 	}
 	msg, err := icmp.ParseMessage(ipv4.ICMPTypeEcho.Protocol(), c.buf)
 	if err != nil {
@@ -762,7 +745,7 @@ func (c *testPacketConnOK) ReadFrom(b []byte) (n int, ttl int, src net.Addr, err
 		return 0, 0, nil, err
 	}
 	time.Sleep(10 * time.Millisecond)
-	return copy(b, buf), 64, c.dst, nil
+	return copy(b, buf), 64, testAddr, nil
 }
 
 func TestRunOK(t *testing.T) {
