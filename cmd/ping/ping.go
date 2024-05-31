@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"time"
 
-	probing "github.com/prometheus-community/pro-bing"
+	probing "github.com/ken-schneider/pro-bing"
 )
 
 var usage = `
