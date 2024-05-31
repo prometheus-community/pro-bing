@@ -756,11 +756,6 @@ func (p *Pinger) processPacket(recv *packet) error {
 		return fmt.Errorf("error parsing icmp message: %w", err)
 	}
 
-	if m.Type != ipv4.ICMPTypeEchoReply && m.Type != ipv6.ICMPTypeEchoReply {
-		// Not an echo reply, ignore it
-		return nil
-	}
-
 	// If initial ip is a broadcast ip, ping responses will come from machines' in the
 	// subnet, thus ip will differ. Below gets real ip from received package.
 	var realIP *net.IPAddr
@@ -781,6 +776,15 @@ func (p *Pinger) processPacket(recv *packet) error {
 		Addr:   realIP.String(),
 		TTL:    recv.ttl,
 		ID:     p.id,
+	}
+
+	if p.OnRecv != nil {
+		p.OnRecv(inPkt)
+	}
+
+	if m.Type != ipv4.ICMPTypeEchoReply && m.Type != ipv6.ICMPTypeEchoReply {
+		// Not an echo reply, ignore it
+		return nil
 	}
 
 	switch pkt := m.Body.(type) {
@@ -816,10 +820,6 @@ func (p *Pinger) processPacket(recv *packet) error {
 	default:
 		// Very bad, not sure how this can happen
 		return fmt.Errorf("invalid ICMP echo reply; type: '%T', '%v'", pkt, pkt)
-	}
-
-	if p.OnRecv != nil {
-		p.OnRecv(inPkt)
 	}
 
 	return nil
