@@ -4,16 +4,33 @@
 package probing
 
 import (
+	"math"
+
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
 )
 
+const (
+	minimumBufferLength = 2048
+)
+
 // Returns the length of an ICMP message, plus the IP packet header.
+// Calculated as:
+// len(ICMP request data) + 2 * (len(ICMP header) + len(IP header))
+//
+// On Windows, the buffer needs to be able to contain:
+// - Response IP Header
+// - Response ICMP Header
+// - Request IP Header
+// - Request ICMP Header
+// - Request Data
 func (p *Pinger) getMessageLength() int {
 	if p.ipv4 {
-		return p.Size + 8 + ipv4.HeaderLen
+		calculatedLength := p.Size + (ipv4.HeaderLen+8)*2
+		return int(math.Max(float64(calculatedLength), float64(minimumBufferLength)))
 	}
-	return p.Size + 8 + ipv6.HeaderLen
+	calculatedLength := p.Size + (ipv6.HeaderLen+8)*2
+	return int(math.Max(float64(calculatedLength), float64(minimumBufferLength)))
 }
 
 // Attempts to match the ID of an ICMP packet.
