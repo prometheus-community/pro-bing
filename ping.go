@@ -102,6 +102,7 @@ func New(addr string) *Pinger {
 		Count:      -1,
 		Interval:   time.Second,
 		RecordRtts: true,
+		RecordTTLs: true,
 		Size:       timeSliceLength + trackerLength,
 		Timeout:    time.Duration(math.MaxInt64),
 
@@ -166,8 +167,15 @@ type Pinger struct {
 	// Set to false to avoid memory bloat for long running pings.
 	RecordRtts bool
 
+	// If true, keep a record of TTLs of all received packets.
+	// Set to false to avoid memory bloat for long running pings.
+	RecordTTLs bool
+
 	// rtts is all of the Rtts
 	rtts []time.Duration
+
+	// ttls is all of the TTLs
+	ttls []uint8
 
 	// OnSetup is called when Pinger has finished setting up the listening socket
 	OnSetup func()
@@ -285,6 +293,9 @@ type Statistics struct {
 	// Rtts is all of the round-trip times sent via this pinger.
 	Rtts []time.Duration
 
+	// TTLs is all of the TTLs received via this pinger.
+	TTLs []uint8
+
 	// MinRtt is the minimum round-trip time sent via this pinger.
 	MinRtt time.Duration
 
@@ -306,6 +317,10 @@ func (p *Pinger) updateStatistics(pkt *Packet) {
 	p.PacketsRecv++
 	if p.RecordRtts {
 		p.rtts = append(p.rtts, pkt.Rtt)
+	}
+
+	if p.RecordTTLs {
+		p.ttls = append(p.ttls, uint8(pkt.TTL))
 	}
 
 	if p.PacketsRecv == 1 || pkt.Rtt < p.minRtt {
@@ -643,6 +658,7 @@ func (p *Pinger) Statistics() *Statistics {
 		PacketsRecvDuplicates: p.PacketsRecvDuplicates,
 		PacketLoss:            loss,
 		Rtts:                  p.rtts,
+		TTLs:                  p.ttls,
 		Addr:                  p.addr,
 		IPAddr:                p.ipaddr,
 		MaxRtt:                p.maxRtt,
