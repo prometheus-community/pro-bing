@@ -21,6 +21,7 @@ type packetConn interface {
 	SetMark(m uint) error
 	SetDoNotFragment() error
 	SetBroadcastFlag() error
+	SetTrafficClass(uint8) error
 }
 
 type icmpConn struct {
@@ -67,6 +68,10 @@ func (c *icmpv4Conn) SetFlagTTL() error {
 	return err
 }
 
+func (c *icmpv4Conn) SetTrafficClass(tclass uint8) error {
+	return c.c.IPv4PacketConn().SetTOS(int(tclass))
+}
+
 func (c *icmpv4Conn) ReadFrom(b []byte) (int, int, net.Addr, error) {
 	ttl := -1
 	n, cm, src, err := c.c.IPv4PacketConn().ReadFrom(b)
@@ -90,6 +95,10 @@ func (c *icmpV6Conn) SetFlagTTL() error {
 		return nil
 	}
 	return err
+}
+
+func (c *icmpV6Conn) SetTrafficClass(tclass uint8) error {
+	return c.c.IPv6PacketConn().SetTrafficClass(int(tclass))
 }
 
 func (c *icmpV6Conn) ReadFrom(b []byte) (int, int, net.Addr, error) {

@@ -10,11 +10,7 @@ import (
 	probing "github.com/prometheus-community/pro-bing"
 )
 
-var usage = `
-Usage:
-
-    ping [-c count] [-i interval] [-t timeout] [--privileged] host
-
+var examples = `
 Examples:
 
     # ping google continuously
@@ -34,6 +30,9 @@ Examples:
 
     # Send ICMP messages with a 100-byte payload
     ping -s 100 1.1.1.1
+
+    # Send ICMP messages with DSCP CS4 and ECN bits set to 0
+    ping -Q 128 8.8.8.8
 `
 
 func main() {
@@ -42,9 +41,13 @@ func main() {
 	count := flag.Int("c", -1, "")
 	size := flag.Int("s", 24, "")
 	ttl := flag.Int("l", 64, "TTL")
+	tclass := flag.Int("Q", 192, "Set Quality of Service -related bits in ICMP datagrams (DSCP + ECN bits). Only decimal number supported")
 	privileged := flag.Bool("privileged", false, "")
 	flag.Usage = func() {
-		fmt.Print(usage)
+		out := flag.CommandLine.Output()
+		fmt.Fprintf(out, "Usage of %s:\n", os.Args[0])
+		flag.PrintDefaults()
+		fmt.Fprint(out, examples)
 	}
 	flag.Parse()
 
@@ -91,6 +94,7 @@ func main() {
 	pinger.Timeout = *timeout
 	pinger.TTL = *ttl
 	pinger.SetPrivileged(*privileged)
+	pinger.SetTrafficClass(uint8(*tclass))
 
 	fmt.Printf("PING %s (%s):\n", pinger.Addr(), pinger.IPAddr())
 	err = pinger.Run()
