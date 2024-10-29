@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"runtime"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
@@ -473,6 +474,26 @@ func TestStatisticsZeroDivision(t *testing.T) {
 	}
 }
 
+func TestSetInterfaceName(t *testing.T) {
+	pinger := New("localhost")
+	pinger.Count = 1
+	pinger.Timeout = time.Second
+
+	// Set loopback interface
+	pinger.InterfaceDevice = "lo"
+	err := pinger.Run()
+	if runtime.GOOS == "linux" {
+		AssertNoError(t, err)
+	} else {
+		AssertError(t, err, "other platforms unsupport this feature")
+	}
+
+	// Set fake interface
+	pinger.InterfaceDevice = "L()0pB@cK"
+	err = pinger.Run()
+	AssertError(t, err, "device not found")
+}
+
 // Test helpers
 func makeTestPinger() *Pinger {
 	pinger := New("127.0.0.1")
@@ -644,7 +665,7 @@ func (c testPacketConn) SetTTL(t int)                      {}
 func (c testPacketConn) SetMark(m uint) error              { return nil }
 func (c testPacketConn) SetDoNotFragment() error           { return nil }
 func (c testPacketConn) SetBroadcastFlag() error           { return nil }
-
+func (c testPacketConn) SetIfIndex(ifIndex int)            {}
 func (c testPacketConn) ReadFrom(b []byte) (n int, ttl int, src net.Addr, err error) {
 	return 0, 0, testAddr, nil
 }
