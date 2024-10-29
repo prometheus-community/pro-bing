@@ -2,33 +2,52 @@
 version: 2.1
 
 orbs:
-  goreleaser: hubci/goreleaser@2.3.0
-
-executors:
-  golang:
-    docker:
-    - image: cimg/go:1.20
+  go: circleci/go@1.7.1
+  goreleaser: hubci/goreleaser@2.5.0
 
 jobs:
   build:
-    executor: golang
+    parameters:
+      go_version:
+        type: string
+      use_gomod_cache:
+        type: boolean
+        default: true
+    docker:
+      - image: cimg/go:<< parameters.go_version >>
     steps:
       - checkout
+      - when:
+          condition: << parameters.use_gomod_cache >>
+          steps:
+            - go/load-cache:
+                key: v1-go<< parameters.go_version >>
       - run: go mod download
       - run: make
+      - when:
+          condition: << parameters.use_gomod_cache >>
+          steps:
+            - go/save-cache:
+                key: v1-go<< parameters.go_version >>
 
 workflows:
   version: 2
   pro-bing:
     jobs:
     - build:
+        name: go-<< matrix.go_version >>
+        matrix:
+          parameters:
+            go_version:
+              - "1.22"
+              - "1.23"
         filters:
           tags:
             only: /.*/
     - goreleaser/release:
         name: test-release
-        version: '1.16.2'
-        go-version: '1.20'
+        version: '2.3.2'
+        go-version: '1.23.2'
         dry-run: true
         requires:
         - build
@@ -37,8 +56,8 @@ workflows:
             only: /.*/
     - goreleaser/release:
         name: release
-        version: '1.16.2'
-        go-version: '1.20'
+        version: '2.3.2'
+        go-version: '1.23.2'
         requires:
         - build
         filters:
