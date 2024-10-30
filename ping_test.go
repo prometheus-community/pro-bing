@@ -480,7 +480,7 @@ func TestSetInterfaceName(t *testing.T) {
 	pinger.Timeout = time.Second
 
 	// Set loopback interface
-	pinger.InterfaceDevice = "lo"
+	pinger.InterfaceName = "lo"
 	err := pinger.Run()
 	if runtime.GOOS == "linux" {
 		AssertNoError(t, err)
@@ -489,7 +489,7 @@ func TestSetInterfaceName(t *testing.T) {
 	}
 
 	// Set fake interface
-	pinger.InterfaceDevice = "L()0pB@cK"
+	pinger.InterfaceName = "L()0pB@cK"
 	err = pinger.Run()
 	AssertError(t, err, "device not found")
 }
