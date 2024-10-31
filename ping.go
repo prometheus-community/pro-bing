@@ -116,6 +116,7 @@ func New(addr string) *Pinger {
 		protocol:          "udp",
 		awaitingSequences: firstSequence,
 		TTL:               64,
+		tclass:            192, // CS6 (network control)
 		logger:            StdLogger{Logger: log.New(log.Writer(), log.Prefix(), log.Flags())},
 	}
 }
@@ -239,6 +240,9 @@ type Pinger struct {
 	logger Logger
 
 	TTL int
+
+	// tclass defines the traffic class (ToS for IPv4) set on outgoing icmp packets
+	tclass uint8
 }
 
 type packet struct {
@@ -488,6 +492,18 @@ func (p *Pinger) SetDoNotFragment(df bool) {
 	p.df = df
 }
 
+// SetTrafficClass sets the traffic class (type-of-service field for IPv4) field
+// value for future outgoing packets.
+func (p *Pinger) SetTrafficClass(tc uint8) {
+	p.tclass = tc
+}
+
+// TrafficClass returns the traffic class field (type-of-service field for IPv4)
+// value for outgoing packets.
+func (p *Pinger) TrafficClass() uint8 {
+	return p.tclass
+}
+
 // Run runs the pinger. This is a blocking function that will exit when it's
 // done. If Count or Interval are not specified, it will run continuously until
 // it is interrupted.
@@ -524,6 +540,12 @@ func (p *Pinger) RunWithContext(ctx context.Context) error {
 	if p.df {
 		if err := conn.SetDoNotFragment(); err != nil {
 			return fmt.Errorf("error setting do-not-fragment: %v", err)
+		}
+	}
+
+	if p.tclass != 0 {
+		if err := conn.SetTrafficClass(p.tclass); err != nil {
+			return fmt.Errorf("error setting traffic class: %v", err)
 		}
 	}
 

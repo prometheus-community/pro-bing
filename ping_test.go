@@ -242,6 +242,7 @@ func TestNewPingerValid(t *testing.T) {
 	AssertNotEqualStrings(t, "www.google.com", p.IPAddr().String())
 	AssertTrue(t, isIPv4(p.IPAddr().IP))
 	AssertFalse(t, p.Privileged())
+	AssertEquals(t, 192, p.tclass)
 	// Test that SetPrivileged works
 	p.SetPrivileged(true)
 	AssertTrue(t, p.Privileged())
@@ -253,6 +254,9 @@ func TestNewPingerValid(t *testing.T) {
 	err = p.SetAddr("ipv6.google.com")
 	AssertNoError(t, err)
 	AssertFalse(t, isIPv4(p.IPAddr().IP))
+	// Test setting traffic class
+	p.SetTrafficClass(0)
+	AssertEquals(t, 0, p.tclass)
 
 	p = New("localhost")
 	err = p.Resolve()
@@ -541,6 +545,14 @@ func AssertEqualStrings(t *testing.T, expected, actual string) {
 	}
 }
 
+func AssertEquals[T comparable](t *testing.T, expected, actual T) {
+	t.Helper()
+	if expected != actual {
+		t.Errorf("Expected %v, got %v, Stack:\n%s",
+			expected, actual, string(debug.Stack()))
+	}
+}
+
 func AssertNotEqualStrings(t *testing.T, expected, actual string) {
 	t.Helper()
 	if expected == actual {
@@ -666,6 +678,8 @@ func (c testPacketConn) SetMark(m uint) error              { return nil }
 func (c testPacketConn) SetDoNotFragment() error           { return nil }
 func (c testPacketConn) SetBroadcastFlag() error           { return nil }
 func (c testPacketConn) SetIfIndex(ifIndex int)            {}
+func (c testPacketConn) SetTrafficClass(uint8) error       { return nil }
+
 func (c testPacketConn) ReadFrom(b []byte) (n int, ttl int, src net.Addr, err error) {
 	return 0, 0, testAddr, nil
 }
