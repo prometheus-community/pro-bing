@@ -13,8 +13,8 @@ jobs:
       use_gomod_cache:
         type: boolean
         default: true
-    docker:
-      - image: cimg/go:<< parameters.go_version >>
+    machine:
+      image: ubuntu-2204:2024.05.1
     steps:
       - checkout
       - when:
