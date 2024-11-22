@@ -34,7 +34,8 @@ func TestProcessPacket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to marshal UUID binary: %s", err)
 	}
-	data := append(timeToBytes(time.Now()), uuidEncoded...)
+	now := time.Now()
+	data := append(timeToBytes(now), uuidEncoded...)
 	if remainSize := pinger.Size - timeSliceLength - trackerLength; remainSize > 0 {
 		data = append(data, bytes.Repeat([]byte{1}, remainSize)...)
 	}
@@ -44,7 +45,8 @@ func TestProcessPacket(t *testing.T) {
 		Seq:  pinger.sequence,
 		Data: data,
 	}
-	pinger.awaitingSequences[currentUUID][pinger.sequence] = struct{}{}
+	pinger.awaitingSequences.putElem(currentUUID, pinger.sequence, now)
+	//pinger.awaitingSequences[currentUUID][pinger.sequence] = struct{}{}
 
 	msg := &icmp.Message{
 		Type: ipv4.ICMPTypeEchoReply,
@@ -633,7 +635,8 @@ func TestProcessPacket_IgnoresDuplicateSequence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to marshal UUID binary: %s", err)
 	}
-	data := append(timeToBytes(time.Now()), uuidEncoded...)
+	now := time.Now()
+	data := append(timeToBytes(now), uuidEncoded...)
 	if remainSize := pinger.Size - timeSliceLength - trackerLength; remainSize > 0 {
 		data = append(data, bytes.Repeat([]byte{1}, remainSize)...)
 	}
@@ -644,7 +647,9 @@ func TestProcessPacket_IgnoresDuplicateSequence(t *testing.T) {
 		Data: data,
 	}
 	// register the sequence as sent
-	pinger.awaitingSequences[currentUUID][0] = struct{}{}
+
+	pinger.awaitingSequences.putElem(currentUUID, 0, now)
+	//pinger.awaitingSequences[currentUUID][0] = struct{}{}
 
 	msg := &icmp.Message{
 		Type: ipv4.ICMPTypeEchoReply,
