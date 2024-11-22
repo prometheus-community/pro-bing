@@ -14,7 +14,7 @@ jobs:
         type: boolean
         default: true
     machine:
-      image: ubuntu-2204:2024.05.1
+      image: ubuntu-2204:current
     steps:
       - checkout
       - when:
@@ -46,8 +46,8 @@ workflows:
             only: /.*/
     - goreleaser/release:
         name: test-release
-        version: '2.3.2'
-        go-version: '1.23.2'
+        version: '2.4.7'
+        go-version: '1.23.3'
         dry-run: true
         requires:
         - build
@@ -56,8 +56,8 @@ workflows:
             only: /.*/
     - goreleaser/release:
         name: release
-        version: '2.3.2'
-        go-version: '1.23.2'
+        version: '2.4.7'
+        go-version: '1.23.3'
         requires:
         - build
         filters:
