@@ -160,7 +160,7 @@ type Pinger struct {
 	maxRtt    time.Duration
 	avgRtt    time.Duration
 	stdDevRtt time.Duration
-	stddevm2  time.Duration
+	stddevm2  float64
 	statsMu   sync.RWMutex
 
 	// If true, keep a record of rtts of all received packets.
@@ -340,9 +340,9 @@ func (p *Pinger) updateStatistics(pkt *Packet) {
 	delta := pkt.Rtt - p.avgRtt
 	p.avgRtt += delta / pktCount
 	delta2 := pkt.Rtt - p.avgRtt
-	p.stddevm2 += delta * delta2
+	p.stddevm2 += float64(delta) * float64(delta2)
 
-	p.stdDevRtt = time.Duration(math.Sqrt(float64(p.stddevm2 / pktCount)))
+	p.stdDevRtt = time.Duration(math.Sqrt(p.stddevm2 / float64(pktCount)))
 }
 
 // SetIPAddr sets the ip address of the target host.
