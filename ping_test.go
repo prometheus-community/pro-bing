@@ -677,6 +677,7 @@ func (c testPacketConn) SetTTL(t int)                      {}
 func (c testPacketConn) SetMark(m uint) error              { return nil }
 func (c testPacketConn) SetDoNotFragment() error           { return nil }
 func (c testPacketConn) SetBroadcastFlag() error           { return nil }
+func (c testPacketConn) InstallICMPIDFilter(id int) error  { return nil }
 func (c testPacketConn) SetIfIndex(ifIndex int)            {}
 func (c testPacketConn) SetTrafficClass(uint8) error       { return nil }
 
