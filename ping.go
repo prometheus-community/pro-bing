@@ -88,9 +88,8 @@ var (
 	ipv4Proto = map[string]string{"icmp": "ip4:icmp", "udp": "udp4"}
 	ipv6Proto = map[string]string{"icmp": "ip6:ipv6-icmp", "udp": "udp6"}
 
-	ErrMarkNotSupported     = errors.New("setting SO_MARK socket option is not supported on this platform")
-	ErrDFNotSupported       = errors.New("setting do-not-fragment bit is not supported on this platform")
-	ErrSockFilterNotSupport = errors.New("setting SO_ATTACH_FILTER socket option is not supported on this platform")
+	ErrMarkNotSupported = errors.New("setting SO_MARK socket option is not supported on this platform")
+	ErrDFNotSupported   = errors.New("setting do-not-fragment bit is not supported on this platform")
 )
 
 // New returns a new Pinger struct pointer.
@@ -982,7 +981,9 @@ func (p *Pinger) listen() (packetConn, error) {
 	}
 
 	if p.Privileged() {
-		conn.InstallICMPIDFilter(p.id)
+		if err := conn.InstallICMPIDFilter(p.id); err != nil {
+			p.logger.Warnf("error installing icmp filter, %v", err)
+		}
 	}
 
 	return conn, nil

@@ -60,9 +60,9 @@ func (c *icmpV6Conn) SetBroadcastFlag() error {
 }
 
 func (c *icmpv4Conn) InstallICMPIDFilter(id int) error {
-	return ErrSockFilterNotSupport
+	return nil
 }
 
 func (c *icmpV6Conn) InstallICMPIDFilter(id int) error {
-	return ErrSockFilterNotSupport
+	return nil
 }
