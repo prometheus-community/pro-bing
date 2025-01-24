@@ -40,6 +40,7 @@ Examples:
 
 func main() {
 	timeout := flag.Duration("t", time.Second*100000, "")
+	maxRtt := flag.Duration("mr", time.Second*3, "")
 	interval := flag.Duration("i", time.Second, "")
 	count := flag.Int("c", -1, "")
 	size := flag.Int("s", 24, "")
@@ -91,11 +92,15 @@ func main() {
 		fmt.Printf("round-trip min/avg/max/stddev = %v/%v/%v/%v\n",
 			stats.MinRtt, stats.AvgRtt, stats.MaxRtt, stats.StdDevRtt)
 	}
+	pinger.OnTimeOut = func(packet *probing.Packet) {
+		fmt.Println("timeout", packet.Addr, packet.Rtt, packet.TTL)
+	}
 
 	pinger.Count = *count
 	pinger.Size = *size
 	pinger.Interval = *interval
 	pinger.Timeout = *timeout
+	pinger.MaxRtt = *maxRtt
 	pinger.TTL = *ttl
 	pinger.InterfaceName = *iface
 	pinger.SetPrivileged(*privileged)
