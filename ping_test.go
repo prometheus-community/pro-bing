@@ -870,3 +870,11 @@ func TestSetResolveTimeout(t *testing.T) {
 	err = p.SetAddr("127.0.0.1")
 	AssertNoError(t, err)
 }
+
+func TestRunStatisticsConcurrent(t *testing.T) {
+	p := New("www.google.com")
+	p.Count = 1
+	p.Interval = time.Millisecond
+	go p.Statistics()
+	p.Run()
+}
