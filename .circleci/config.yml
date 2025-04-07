@@ -39,15 +39,15 @@ workflows:
         matrix:
           parameters:
             go_version:
-              - "1.22"
               - "1.23"
+              - "1.24"
         filters:
           tags:
             only: /.*/
     - goreleaser/release:
         name: test-release
-        version: '2.4.7'
-        go-version: '1.23.3'
+        version: '2.8.2'
+        go-version: '1.24.2'
         dry-run: true
         requires:
         - build
@@ -56,8 +56,8 @@ workflows:
             only: /.*/
     - goreleaser/release:
         name: release
-        version: '2.4.7'
-        go-version: '1.23.3'
+        version: '2.8.2'
+        go-version: '1.24.2'
         requires:
         - build
         filters:
