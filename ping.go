@@ -164,6 +164,12 @@ type Pinger struct {
 	stddevm2  float64
 	statsMu   sync.RWMutex
 
+	// Jitter calculation fields
+	prevRtt     time.Duration
+	jitterSum   time.Duration
+	jitterCount int
+	Jitter      time.Duration
+
 	// If true, keep a record of rtts of all received packets.
 	// Set to false to avoid memory bloat for long running pings.
 	RecordRtts bool
@@ -315,6 +321,9 @@ type Statistics struct {
 	// StdDevRtt is the standard deviation of the round-trip times sent via
 	// this pinger.
 	StdDevRtt time.Duration
+
+	// Jitter calculation based on mean absolute differences between consecutive RTTs
+	Jitter time.Duration
 }
 
 func (p *Pinger) updateStatistics(pkt *Packet) {
@@ -324,6 +333,20 @@ func (p *Pinger) updateStatistics(pkt *Packet) {
 	p.PacketsRecv++
 	if p.RecordRtts {
 		p.rtts = append(p.rtts, pkt.Rtt)
+
+		// Jitter calculation (mean absolute difference between RTTs)
+		if p.jitterCount == 0 {
+			p.jitterCount = 1
+		} else {
+			diff := pkt.Rtt - p.prevRtt
+			if diff < 0 {
+				diff = -diff
+			}
+			p.jitterSum += diff
+			p.Jitter = p.jitterSum / time.Duration(p.jitterCount)
+			p.jitterCount++
+		}
+		p.prevRtt = pkt.Rtt
 	}
 
 	if p.RecordTTLs {
@@ -705,6 +728,7 @@ func (p *Pinger) Statistics() *Statistics {
 		MinRtt:                p.minRtt,
 		AvgRtt:                p.avgRtt,
 		StdDevRtt:             p.stdDevRtt,
+		Jitter:                p.Jitter,
 	}
 	return &s
 }
