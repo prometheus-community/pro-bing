@@ -47,6 +47,7 @@ func main() {
 	iface := flag.String("I", "", "interface name")
 	tclass := flag.Int("Q", 192, "Set Quality of Service related bits in ICMP datagrams (DSCP + ECN bits). Only decimal number supported")
 	privileged := flag.Bool("privileged", false, "")
+	generations := flag.Int("g", 0, "number of observed UUID generations")
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
 		fmt.Fprintf(out, "Usage of %s:\n", os.Args[0])
@@ -91,6 +92,10 @@ func main() {
 		fmt.Printf("round-trip min/avg/max/stddev = %v/%v/%v/%v\n",
 			stats.MinRtt, stats.AvgRtt, stats.MaxRtt, stats.StdDevRtt)
 	}
+	pinger.OnExpiredRecv = func(pkt *probing.Packet) {
+		fmt.Printf("%d bytes from %s: icmp_seq=%d time=%v ttl=%v (EXPIRED!)\n",
+			pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt, pkt.TTL)
+	}
 
 	pinger.Count = *count
 	pinger.Size = *size
@@ -98,6 +103,7 @@ func main() {
 	pinger.Timeout = *timeout
 	pinger.TTL = *ttl
 	pinger.InterfaceName = *iface
+	pinger.ObservedGenerationsCount = *generations
 	pinger.SetPrivileged(*privileged)
 	pinger.SetTrafficClass(uint8(*tclass))
 
