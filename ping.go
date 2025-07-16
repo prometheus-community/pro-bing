@@ -221,6 +221,9 @@ type Pinger struct {
 	// mark is a SO_MARK (fwmark) set on outgoing icmp packets
 	mark uint
 
+	// Control the underlying connection's file descriptor or handle.
+	Control func(fd uintptr)
+
 	// df when true sets the do-not-fragment bit in the outer IP or IPv6 header
 	df bool
 
@@ -542,6 +545,12 @@ func (p *Pinger) RunWithContext(ctx context.Context) error {
 	if p.mark != 0 {
 		if err := conn.SetMark(p.mark); err != nil {
 			return fmt.Errorf("error setting mark: %v", err)
+		}
+	}
+
+	if p.Control != nil {
+		if err := conn.Control(p.Control); err != nil {
+			return fmt.Errorf("error setting control: %v", err)
 		}
 	}
 
