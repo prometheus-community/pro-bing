@@ -116,7 +116,7 @@ func New(addr string) *Pinger {
 		protocol:          "udp",
 		awaitingSequences: firstSequence,
 		TTL:               64,
-		tclass:            192, // CS6 (network control)
+		tclass:            0,
 		logger:            StdLogger{Logger: log.New(log.Writer(), log.Prefix(), log.Flags())},
 	}
 }

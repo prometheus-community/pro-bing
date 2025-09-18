@@ -242,7 +242,7 @@ func TestNewPingerValid(t *testing.T) {
 	AssertNotEqualStrings(t, "www.google.com", p.IPAddr().String())
 	AssertTrue(t, isIPv4(p.IPAddr().IP))
 	AssertFalse(t, p.Privileged())
-	AssertEquals(t, 192, p.tclass)
+	AssertEquals(t, 0, p.tclass)
 	// Test that SetPrivileged works
 	p.SetPrivileged(true)
 	AssertTrue(t, p.Privileged())
@@ -255,8 +255,8 @@ func TestNewPingerValid(t *testing.T) {
 	AssertNoError(t, err)
 	AssertFalse(t, isIPv4(p.IPAddr().IP))
 	// Test setting traffic class
-	p.SetTrafficClass(0)
-	AssertEquals(t, 0, p.tclass)
+	p.SetTrafficClass(192)
+	AssertEquals(t, 192, p.tclass)
 
 	p = New("localhost")
 	err = p.Resolve()
