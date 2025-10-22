@@ -565,6 +565,15 @@ func (p *Pinger) RunWithContext(ctx context.Context) error {
 		}
 		conn.SetIfIndex(iface.Index)
 	}
+
+	if p.Source != "" {
+		ip := net.ParseIP(p.Source)
+		if ip == nil {
+			return fmt.Errorf("invalid source address: %s", p.Source)
+		}
+		conn.SetSource(ip)
+	}
+
 	return p.run(ctx, conn)
 }
 
