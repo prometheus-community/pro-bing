@@ -675,6 +675,7 @@ func (c testPacketConn) SetFlagTTL() error                 { return nil }
 func (c testPacketConn) SetReadDeadline(t time.Time) error { return nil }
 func (c testPacketConn) SetTTL(t int)                      {}
 func (c testPacketConn) SetMark(m uint) error              { return nil }
+func (c testPacketConn) Control(f func(uintptr)) error     { return nil }
 func (c testPacketConn) SetDoNotFragment() error           { return nil }
 func (c testPacketConn) SetBroadcastFlag() error           { return nil }
 func (c testPacketConn) InstallICMPIDFilter(id int) error  { return nil }
@@ -876,5 +877,14 @@ func TestRunStatisticsConcurrent(t *testing.T) {
 	p.Count = 1
 	p.Interval = time.Millisecond
 	go p.Statistics()
+	p.Run()
+}
+
+func TestControl(t *testing.T) {
+	p := New("127.0.0.1")
+	err := p.Resolve()
+	AssertNoError(t, err)
+	p.Count = 1
+	p.Control = func(fd uintptr) {}
 	p.Run()
 }
