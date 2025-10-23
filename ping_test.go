@@ -498,6 +498,22 @@ func TestSetInterfaceName(t *testing.T) {
 	AssertError(t, err, "device not found")
 }
 
+func TestSetSource(t *testing.T) {
+	pinger := New("localhost")
+	pinger.Count = 1
+	pinger.Timeout = time.Second
+
+	// Set source address
+	pinger.Source = "127.0.0.1"
+	err := pinger.Run()
+	AssertNoError(t, err)
+
+	// Set source to invalid IP
+	pinger.Source = "invalid-ip"
+	err = pinger.Run()
+	AssertError(t, err, "invalid source address: invalid-ip")
+}
+
 // Test helpers
 func makeTestPinger() *Pinger {
 	pinger := New("127.0.0.1")
@@ -679,6 +695,7 @@ func (c testPacketConn) SetDoNotFragment() error           { return nil }
 func (c testPacketConn) SetBroadcastFlag() error           { return nil }
 func (c testPacketConn) InstallICMPIDFilter(id int) error  { return nil }
 func (c testPacketConn) SetIfIndex(ifIndex int)            {}
+func (c testPacketConn) SetSource(source net.IP)           {}
 func (c testPacketConn) SetTrafficClass(uint8) error       { return nil }
 
 func (c testPacketConn) ReadFrom(b []byte) (n int, ttl int, src net.Addr, err error) {
