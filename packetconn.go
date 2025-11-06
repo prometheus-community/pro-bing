@@ -1,8 +1,10 @@
 package probing
 
 import (
+	"fmt"
 	"net"
 	"runtime"
+	"syscall"
 	"time"
 
 	"golang.org/x/net/icmp"
@@ -25,6 +27,7 @@ type packetConn interface {
 	SetSource(source net.IP)
 	SetTrafficClass(uint8) error
 	InstallICMPIDFilter(id int) error
+	Control(f func(uintptr)) error
 }
 
 type icmpConn struct {
@@ -106,6 +109,22 @@ func (c icmpv4Conn) ICMPRequestType() icmp.Type {
 	return ipv4.ICMPTypeEcho
 }
 
+// Control invokes f on the underlying connection's file
+// descriptor or handle.
+func (c *icmpv4Conn) Control(f func(uintptr)) error {
+	syscallConn, ok := c.c.IPv4PacketConn().PacketConn.(syscall.Conn)
+	if ok {
+		sysConn, err := syscallConn.SyscallConn()
+		if err != nil {
+			return err
+		}
+
+		return sysConn.Control(f)
+	}
+
+	return fmt.Errorf("can't find SyscallConn method")
+}
+
 type icmpV6Conn struct {
 	icmpConn
 }
@@ -156,4 +175,20 @@ func (c *icmpV6Conn) WriteTo(b []byte, dst net.Addr) (int, error) {
 
 func (c icmpV6Conn) ICMPRequestType() icmp.Type {
 	return ipv6.ICMPTypeEchoRequest
+}
+
+// Control invokes f on the underlying connection's file
+// descriptor or handle.
+func (c *icmpV6Conn) Control(f func(uintptr)) error {
+	syscallConn, ok := c.c.IPv6PacketConn().PacketConn.(syscall.Conn)
+	if ok {
+		sysConn, err := syscallConn.SyscallConn()
+		if err != nil {
+			return err
+		}
+
+		return sysConn.Control(f)
+	}
+
+	return fmt.Errorf("can't find SyscallConn method")
 }
