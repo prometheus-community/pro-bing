@@ -28,6 +28,9 @@ Examples:
     # ping google specified interface
     ping -I eth1 www.goole.com
 
+    # ping google from a specified source address
+    ping -S 192.168.1.100 www.google.com
+
     # Send a privileged raw ICMP ping
     sudo ping --privileged www.google.com
 
@@ -45,6 +48,7 @@ func main() {
 	size := flag.Int("s", 24, "")
 	ttl := flag.Int("l", 64, "TTL")
 	iface := flag.String("I", "", "interface name")
+	src := flag.String("S", "", "source address")
 	tclass := flag.Int("Q", 192, "Set Quality of Service related bits in ICMP datagrams (DSCP + ECN bits). Only decimal number supported")
 	privileged := flag.Bool("privileged", false, "")
 	flag.Usage = func() {
@@ -100,7 +104,7 @@ func main() {
 	pinger.InterfaceName = *iface
 	pinger.SetPrivileged(*privileged)
 	pinger.SetTrafficClass(uint8(*tclass))
-
+	pinger.Source = *src
 	fmt.Printf("PING %s (%s):\n", pinger.Addr(), pinger.IPAddr())
 	err = pinger.Run()
 	if err != nil {
