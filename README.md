@@ -1,6 +1,6 @@
 # pro-bing
 [![PkgGoDev](https://pkg.go.dev/badge/github.com/prometheus-community/pro-bing)](https://pkg.go.dev/github.com/prometheus-community/pro-bing)
-[![CI](https://github.com/prometheus-community/pro-bing/actions/workflows/ci.yml/badge.svg)](https://github.com/prometheus-community/pro-bing/actions/workflows/ci.yml)
+[![Build Status](https://github.com/prometheus-community/pro-bing/actions/workflows/ci.yml/badge.svg)](https://github.com/prometheus-community/pro-bing/actions/workflows/ci.yml)
 
 A simple but powerful ICMP echo (ping) library for Go, inspired by
 [go-ping](https://github.com/go-ping/ping) & [go-fastping](https://github.com/tatsushid/go-fastping).
