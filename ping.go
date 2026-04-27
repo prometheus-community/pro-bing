@@ -82,6 +82,21 @@ const (
 	networkIP   = "ip"
 	networkIPv4 = "ip4"
 	networkIPv6 = "ip6"
+
+	// Time Exceeded message structure sizes (RFC 792 for IPv4, RFC 4443 for IPv6)
+	// ICMP Time Exceeded header (8) + IP header (20/40) + ICMP Echo header (8)
+	timeExceededMinSizeIPv4 = 36 // 8 + 20 + 8
+	timeExceededMinSizeIPv6 = 56 // 8 + 40 + 8
+
+	// ICMP ID offset in embedded ICMP Echo Request within Time Exceeded
+	// ICMP Time Exceeded header (8) + IP header (20/40) + ICMP Echo type/code/checksum (4)
+	timeExceededIDOffsetIPv4 = 32 // 8 + 20 + 4
+	timeExceededIDOffsetIPv6 = 52 // 8 + 40 + 4
+
+	// Sequence number offset in embedded ICMP Echo Request within Time Exceeded
+	// ICMP Time Exceeded header (8) + IP header (20/40) + ICMP Echo type/code/checksum (4) + ICMP Echo ID (2)
+	timeExceededSeqOffsetIPv4 = 34 // 8 + 20 + 6
+	timeExceededSeqOffsetIPv6 = 54 // 8 + 40 + 6
 )
 
 var (
@@ -96,8 +111,8 @@ var (
 func New(addr string) *Pinger {
 	r := rand.New(rand.NewSource(getSeed()))
 	firstUUID := uuid.New()
-	var firstSequence = map[uuid.UUID]map[int]struct{}{}
-	firstSequence[firstUUID] = make(map[int]struct{})
+	var firstSequence = map[uuid.UUID]map[int]time.Time{}
+	firstSequence[firstUUID] = make(map[int]time.Time)
 	return &Pinger{
 		Count:      -1,
 		Interval:   time.Second,
@@ -193,6 +208,9 @@ type Pinger struct {
 	// OnDuplicateRecv is called when a packet is received that has already been received.
 	OnDuplicateRecv func(*Packet)
 
+	// OnTimeExceeded is called when an ICMP Time Exceeded message is received.
+	OnTimeExceeded func(*Packet)
+
 	// OnSendError is called when an error occurs while Pinger attempts to send a packet
 	OnSendError func(*Packet, error)
 
@@ -231,7 +249,8 @@ type Pinger struct {
 	id       int
 	sequence int
 	// awaitingSequences are in-flight sequence numbers we keep track of to help remove duplicate receipts
-	awaitingSequences map[uuid.UUID]map[int]struct{}
+	// awaitingSequences also tracks sequence number send times
+	awaitingSequences map[uuid.UUID]map[int]time.Time
 	// network is one of "ip", "ip4", or "ip6".
 	network string
 	// protocol is "icmp" or "udp".
@@ -755,7 +774,20 @@ func (p *Pinger) recvICMP(
 		case <-p.done:
 			return nil
 		default:
-			bytes := make([]byte, p.getMessageLength()+offset)
+			// Calculate buffer size to accommodate both Echo Reply and Time Exceeded messages.
+			// Time Exceeded messages are larger, so use the maximum of the two sizes.
+			var minTimeExceededSize int
+			if p.ipv4 {
+				minTimeExceededSize = timeExceededMinSizeIPv4 + p.Size + offset
+			} else {
+				minTimeExceededSize = timeExceededMinSizeIPv6 + p.Size + offset
+			}
+
+			bufferSize := p.getMessageLength() + offset
+			if bufferSize < minTimeExceededSize {
+				bufferSize = minTimeExceededSize
+			}
+			bytes := make([]byte, bufferSize)
 			if err := conn.SetReadDeadline(time.Now().Add(delay)); err != nil {
 				return err
 			}
@@ -821,8 +853,83 @@ func (p *Pinger) processPacket(recv *packet) error {
 		return fmt.Errorf("error parsing icmp message: %w", err)
 	}
 
+	// Handle ICMP Time Exceeded messages
+	if m.Type == ipv4.ICMPTypeTimeExceeded || m.Type == ipv6.ICMPTypeTimeExceeded {
+		// Only process if callback is set
+		if p.OnTimeExceeded == nil {
+			return nil
+		}
+
+		// Extract the source IP from the Time Exceeded message
+		var realIP *net.IPAddr
+		switch v := recv.addr.(type) {
+		case *net.IPAddr:
+			realIP = v
+		case *net.UDPAddr:
+			realIP = &net.IPAddr{IP: v.IP}
+		default:
+			realIP = p.ipaddr
+		}
+
+		// Extract ICMP ID and sequence number from the ICMP Echo Request that is embedded within the Time Exceeded message
+		var minSize int
+		var idOffset int
+		var seqOffset int
+
+		if p.ipv4 {
+			minSize = timeExceededMinSizeIPv4
+			idOffset = timeExceededIDOffsetIPv4
+			seqOffset = timeExceededSeqOffsetIPv4
+		} else {
+			minSize = timeExceededMinSizeIPv6
+			idOffset = timeExceededIDOffsetIPv6
+			seqOffset = timeExceededSeqOffsetIPv6
+		}
+
+		// Verify packet is large enough to extract ICMP ID and sequence number
+		if recv.nbytes < minSize {
+			return nil
+		}
+
+		// Extract and verify ICMP ID matches this pinger's ID
+		id := int(recv.bytes[idOffset])<<8 | int(recv.bytes[idOffset+1])
+		if id != p.id {
+			return nil // Not our packet, ignore
+		}
+
+		// Extract sequence number
+		seq := int(recv.bytes[seqOffset])<<8 | int(recv.bytes[seqOffset+1])
+
+		// Look up send time by sequence number
+		currentUUID := p.getCurrentTrackerUUID()
+		sendTime, ok := p.awaitingSequences[currentUUID][seq]
+		if !ok {
+			return nil
+		}
+		delete(p.awaitingSequences[currentUUID], seq)
+
+		rtt := receivedAt.Sub(sendTime)
+
+		pkt := &Packet{
+			Nbytes: recv.nbytes,
+			IPAddr: realIP,
+			Addr:   realIP.String(),
+			TTL:    recv.ttl,
+			ID:     p.id,
+			Seq:    seq,
+			Rtt:    rtt,
+		}
+
+		// Update statistics with the Time Exceeded packet
+		p.updateStatistics(pkt)
+
+		p.OnTimeExceeded(pkt)
+
+		return nil
+	}
+
 	if m.Type != ipv4.ICMPTypeEchoReply && m.Type != ipv6.ICMPTypeEchoReply {
-		// Not an echo reply, ignore it
+		// Not an echo reply or time exceeded, ignore it
 		return nil
 	}
 
@@ -962,8 +1069,8 @@ func (p *Pinger) sendICMP(conn packetConn) error {
 			}
 			p.OnSend(outPkt)
 		}
-		// mark this sequence as in-flight
-		p.awaitingSequences[currentUUID][p.sequence] = struct{}{}
+		// mark this sequence as in-flight and record send time
+		p.awaitingSequences[currentUUID][p.sequence] = time.Now()
 		p.statsMu.Lock()
 		p.PacketsSent++
 		p.statsMu.Unlock()
@@ -971,7 +1078,7 @@ func (p *Pinger) sendICMP(conn packetConn) error {
 		if p.sequence > 65535 {
 			newUUID := uuid.New()
 			p.trackerUUIDs = append(p.trackerUUIDs, newUUID)
-			p.awaitingSequences[newUUID] = make(map[int]struct{})
+			p.awaitingSequences[newUUID] = make(map[int]time.Time)
 			p.sequence = 0
 		}
 		break
