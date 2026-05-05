@@ -156,6 +156,9 @@ type Pinger struct {
 	// Number of duplicate packets received
 	PacketsRecvDuplicates int
 
+	// Number of expired packets received
+	PacketsRecvExpired int
+
 	// Round trip time statistics
 	minRtt    time.Duration
 	maxRtt    time.Duration
@@ -193,6 +196,9 @@ type Pinger struct {
 	// OnDuplicateRecv is called when a packet is received that has already been received.
 	OnDuplicateRecv func(*Packet)
 
+	// OnExpiredRecv is called when a packet from expired generation has been received.
+	OnExpiredRecv func(*Packet)
+
 	// OnSendError is called when an error occurs while Pinger attempts to send a packet
 	OnSendError func(*Packet, error)
 
@@ -210,6 +216,11 @@ type Pinger struct {
 
 	// Interface used to send/recv ICMP messages
 	InterfaceName string
+
+	// ObservedGenerationsCount specifies number of sequence generations to be tracked by Pinger
+	// 0 means that Pinger will track unlimited number of generations.
+	// Set to finite value to avoid memory bloat for long running pings.
+	ObservedGenerationsCount int
 
 	// Channel and mutex used to communicate when the Pinger should stop between goroutines.
 	done chan interface{}
@@ -287,6 +298,9 @@ type Statistics struct {
 
 	// PacketsRecvDuplicates is the number of duplicate responses there were to a sent packet.
 	PacketsRecvDuplicates int
+
+	// PacketsRecvExpired is the number of expired responses there were to a sent packet.
+	PacketsRecvExpired int
 
 	// PacketLoss is the percentage of packets lost.
 	PacketLoss float64
@@ -705,6 +719,7 @@ func (p *Pinger) Statistics() *Statistics {
 		PacketsSent:           sent,
 		PacketsRecv:           p.PacketsRecv,
 		PacketsRecvDuplicates: p.PacketsRecvDuplicates,
+		PacketsRecvExpired:    p.PacketsRecvExpired,
 		PacketLoss:            loss,
 		Rtts:                  p.rtts,
 		TTLs:                  p.ttls,
@@ -867,6 +882,17 @@ func (p *Pinger) processPacket(recv *packet) error {
 		timestamp := bytesToTime(pkt.Data[:timeSliceLength])
 		inPkt.Rtt = receivedAt.Sub(timestamp)
 		inPkt.Seq = pkt.Seq
+		// Check if received UUID comes from observed generation, if not ignore it.
+		if _, observed := p.awaitingSequences[*pktUUID]; !observed {
+			p.statsMu.Lock()
+			p.PacketsRecvExpired++
+			p.statsMu.Unlock()
+			if p.OnExpiredRecv != nil {
+				p.OnExpiredRecv(inPkt)
+			}
+			return nil
+		}
+
 		// If we've already received this sequence, ignore it.
 		if _, inflight := p.awaitingSequences[*pktUUID][pkt.Seq]; !inflight {
 			p.statsMu.Lock()
@@ -973,6 +999,13 @@ func (p *Pinger) sendICMP(conn packetConn) error {
 			p.trackerUUIDs = append(p.trackerUUIDs, newUUID)
 			p.awaitingSequences[newUUID] = make(map[int]struct{})
 			p.sequence = 0
+			if p.ObservedGenerationsCount != 0 && len(p.trackerUUIDs) > p.ObservedGenerationsCount {
+				deleted := len(p.trackerUUIDs) - p.ObservedGenerationsCount
+				for i := range deleted {
+					delete(p.awaitingSequences, p.trackerUUIDs[i])
+				}
+				p.trackerUUIDs = p.trackerUUIDs[deleted:]
+			}
 		}
 		break
 	}
