@@ -44,7 +44,7 @@ func TestProcessPacket(t *testing.T) {
 		Seq:  pinger.sequence,
 		Data: data,
 	}
-	pinger.awaitingSequences[currentUUID][pinger.sequence] = struct{}{}
+	pinger.awaitingSequences[currentUUID][pinger.sequence] = time.Now()
 
 	msg := &icmp.Message{
 		Type: ipv4.ICMPTypeEchoReply,
@@ -231,6 +231,193 @@ func TestProcessPacket_PacketTooSmall(t *testing.T) {
 
 	err := pinger.processPacket(&pkt)
 	AssertError(t, err, "")
+}
+
+func TestProcessPacket_TimeExceeded(t *testing.T) {
+	pinger := makeTestPinger()
+	shouldBe1 := 0
+	var receivedPkt *Packet
+
+	// OnTimeExceeded callback should be called
+	pinger.OnTimeExceeded = func(pkt *Packet) {
+		shouldBe1++
+		receivedPkt = pkt
+	}
+
+	currentUUID := pinger.getCurrentTrackerUUID()
+	seq := 5
+
+	// Record send time for this sequence
+	pinger.awaitingSequences[currentUUID][seq] = time.Now().Add(-20 * time.Millisecond)
+
+	// Create a Time Exceeded message with embedded ICMP Echo Request
+	// Structure: TIME_EXCEEDED header (8 bytes) + IP header (20 bytes) + ICMP Echo (8+ bytes)
+	embeddedICMP := make([]byte, 36)
+	// ICMP TIME_EXCEEDED header (8 bytes) - all zeros is fine for test
+	// Embedded IP header (20 bytes) - skip for test
+	// Embedded ICMP Echo Request header (8 bytes)
+	embeddedICMP[28] = 8 // ICMP Type: Echo Request
+	embeddedICMP[29] = 0 // ICMP Code
+	// Checksum at 30-31 (skip)
+	// ID at 32-33 - must match pinger.id
+	embeddedICMP[32] = byte(pinger.id >> 8)
+	embeddedICMP[33] = byte(pinger.id)
+	// Sequence at 34-35
+	embeddedICMP[34] = byte(seq >> 8)
+	embeddedICMP[35] = byte(seq)
+
+	msg := &icmp.Message{
+		Type: ipv4.ICMPTypeTimeExceeded,
+		Code: 0,
+		Body: &icmp.TimeExceeded{
+			Data: embeddedICMP[8:], // Skip TIME_EXCEEDED header for Body
+		},
+	}
+
+	msgBytes, _ := msg.Marshal(nil)
+	pkt := makeTestPacket(msgBytes)
+
+	err := pinger.processPacket(&pkt)
+	AssertNoError(t, err)
+	AssertTrue(t, shouldBe1 == 1)
+	AssertTrue(t, receivedPkt != nil)
+	AssertTrue(t, receivedPkt.Seq == seq)
+	AssertTrue(t, receivedPkt.Rtt > 0)
+
+	// Verify send time was cleaned up
+	_, exists := pinger.awaitingSequences[currentUUID][seq]
+	AssertTrue(t, !exists)
+}
+
+func TestProcessPacket_TimeExceeded_NoCallback(t *testing.T) {
+	pinger := makeTestPinger()
+
+	// OnTimeExceeded is nil - should not panic
+	pinger.OnTimeExceeded = nil
+
+	currentUUID := pinger.getCurrentTrackerUUID()
+	seq := 5
+	pinger.awaitingSequences[currentUUID][seq] = time.Now()
+
+	embeddedICMP := make([]byte, 36)
+	embeddedICMP[28] = 8
+	embeddedICMP[34] = byte(seq >> 8)
+	embeddedICMP[35] = byte(seq)
+
+	msg := &icmp.Message{
+		Type: ipv4.ICMPTypeTimeExceeded,
+		Code: 0,
+		Body: &icmp.TimeExceeded{
+			Data: embeddedICMP[8:],
+		},
+	}
+
+	msgBytes, _ := msg.Marshal(nil)
+	pkt := makeTestPacket(msgBytes)
+
+	err := pinger.processPacket(&pkt)
+	AssertNoError(t, err)
+
+	// Send time should NOT be cleaned up when callback is nil
+	_, exists := pinger.awaitingSequences[currentUUID][seq]
+	AssertTrue(t, exists)
+}
+
+func TestProcessPacket_TimeExceeded_TruncatedPacket(t *testing.T) {
+	pinger := makeTestPinger()
+	shouldBe0 := 0
+
+	pinger.OnTimeExceeded = func(pkt *Packet) {
+		shouldBe0++
+	}
+
+	// Create truncated packet (less than 36 bytes)
+	embeddedICMP := make([]byte, 30) // Too short
+
+	msg := &icmp.Message{
+		Type: ipv4.ICMPTypeTimeExceeded,
+		Code: 0,
+		Body: &icmp.TimeExceeded{
+			Data: embeddedICMP[8:],
+		},
+	}
+
+	msgBytes, _ := msg.Marshal(nil)
+	pkt := makeTestPacket(msgBytes)
+	pkt.nbytes = 30 // Simulate truncated packet
+
+	err := pinger.processPacket(&pkt)
+	AssertNoError(t, err)
+	AssertTrue(t, shouldBe0 == 0) // Callback should not be called
+}
+
+func TestProcessPacket_TimeExceeded_NoSendTime(t *testing.T) {
+	pinger := makeTestPinger()
+	shouldBe0 := 0
+
+	pinger.OnTimeExceeded = func(pkt *Packet) {
+		shouldBe0++
+	}
+
+	seq := 99 // Sequence with no recorded send time
+
+	embeddedICMP := make([]byte, 36)
+	embeddedICMP[28] = 8
+	embeddedICMP[34] = byte(seq >> 8)
+	embeddedICMP[35] = byte(seq)
+
+	msg := &icmp.Message{
+		Type: ipv4.ICMPTypeTimeExceeded,
+		Code: 0,
+		Body: &icmp.TimeExceeded{
+			Data: embeddedICMP[8:],
+		},
+	}
+
+	msgBytes, _ := msg.Marshal(nil)
+	pkt := makeTestPacket(msgBytes)
+
+	err := pinger.processPacket(&pkt)
+	AssertNoError(t, err)
+	AssertTrue(t, shouldBe0 == 0) // Callback should not be called without send time
+}
+
+func TestProcessPacket_TimeExceeded_IncrementsPacketsRecv(t *testing.T) {
+	pinger := makeTestPinger()
+
+	pinger.OnTimeExceeded = func(pkt *Packet) {}
+
+	currentUUID := pinger.getCurrentTrackerUUID()
+	seq := 5
+	pinger.awaitingSequences[currentUUID][seq] = time.Now()
+
+	initialRecv := pinger.PacketsRecv
+
+	embeddedICMP := make([]byte, 36)
+	embeddedICMP[28] = 8 // ICMP Type: Echo Request
+	// ID at 32-33 - must match pinger.id
+	embeddedICMP[32] = byte(pinger.id >> 8)
+	embeddedICMP[33] = byte(pinger.id)
+	// Sequence at 34-35
+	embeddedICMP[34] = byte(seq >> 8)
+	embeddedICMP[35] = byte(seq)
+
+	msg := &icmp.Message{
+		Type: ipv4.ICMPTypeTimeExceeded,
+		Code: 0,
+		Body: &icmp.TimeExceeded{
+			Data: embeddedICMP[8:],
+		},
+	}
+
+	msgBytes, _ := msg.Marshal(nil)
+	pkt := makeTestPacket(msgBytes)
+
+	err := pinger.processPacket(&pkt)
+	AssertNoError(t, err)
+
+	// Verify PacketsRecv was incremented for early exit support
+	AssertTrue(t, pinger.PacketsRecv == initialRecv+1)
 }
 
 func TestNewPingerValid(t *testing.T) {
@@ -660,7 +847,7 @@ func TestProcessPacket_IgnoresDuplicateSequence(t *testing.T) {
 		Data: data,
 	}
 	// register the sequence as sent
-	pinger.awaitingSequences[currentUUID][0] = struct{}{}
+	pinger.awaitingSequences[currentUUID][0] = time.Now()
 
 	msg := &icmp.Message{
 		Type: ipv4.ICMPTypeEchoReply,

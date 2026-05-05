@@ -141,16 +141,29 @@ func (c *icmpV6Conn) SetBroadcastFlag() error {
 }
 
 // InstallICMPIDFilter attaches a BPF program to the connection to filter ICMP packets id.
+// Also accepts Time Exceeded messages.
 func (c *icmpv4Conn) InstallICMPIDFilter(id int) error {
 	filter, err := bpf.Assemble([]bpf.Instruction{
-		bpf.LoadMemShift{Off: 0},          // Skip IP header
-		bpf.LoadIndirect{Off: 0, Size: 1}, // Load ICMP type
-		bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(ipv4.ICMPTypeEchoReply), SkipTrue: 1, SkipFalse: 0}, // Check if ICMP Echo Reply
-		bpf.RetConstant{Val: 0},           // Reject if false
-		bpf.LoadIndirect{Off: 4, Size: 2}, // Load ICMP echo ident
-		bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(id), SkipTrue: 0, SkipFalse: 1}, // Check if it matches our identifier
-		bpf.RetConstant{Val: ^uint32(0)},                                            // Accept if true
-		bpf.RetConstant{Val: 0},                                                     // Reject if false
+		// Skip IP header (variable length)
+		bpf.LoadMemShift{Off: 0},
+		// Load ICMP type
+		bpf.LoadIndirect{Off: 0, Size: 1},
+
+		// BRANCH 1: Is this packet type Time Exceeded?
+		// If yes, ACCEPT immediately. We will filter by ID in Go (User Space).
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(ipv4.ICMPTypeTimeExceeded), SkipTrue: 6, SkipFalse: 0},
+
+		// BRANCH 2: Is this packet an ICMP Echo Reply?
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(ipv4.ICMPTypeEchoReply), SkipTrue: 1, SkipFalse: 0},
+		bpf.RetConstant{Val: 0}, // Reject if neither type
+
+		// ACTION: Match ID of the ICMP Echo Reply (Offset 4)
+		bpf.LoadIndirect{Off: 4, Size: 2},
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(id), SkipTrue: 0, SkipFalse: 1},
+
+		bpf.RetConstant{Val: ^uint32(0)}, // ACCEPT
+		bpf.RetConstant{Val: 0},          // REJECT
+		bpf.RetConstant{Val: ^uint32(0)}, // ACCEPT (Time Exceeded jump target)
 	})
 	if err != nil {
 		return err
@@ -159,15 +172,25 @@ func (c *icmpv4Conn) InstallICMPIDFilter(id int) error {
 }
 
 // InstallICMPIDFilter attaches a BPF program to the connection to filter ICMPv6 packets id.
+// Also accepts Time Exceeded messages.
 func (c *icmpV6Conn) InstallICMPIDFilter(id int) error {
 	filter, err := bpf.Assemble([]bpf.Instruction{
-		bpf.LoadAbsolute{Off: 0, Size: 1}, // Load ICMP type
-		bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(ipv6.ICMPTypeEchoReply), SkipTrue: 1, SkipFalse: 0}, // Check if it is an ICMP6 echo reply
-		bpf.RetConstant{Val: 0},           // Reject if false
-		bpf.LoadAbsolute{Off: 4, Size: 2}, // Load ICMP echo identifier
-		bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(id), SkipTrue: 0, SkipFalse: 1}, // Check if it matches our identifier
-		bpf.RetConstant{Val: ^uint32(0)},                                            // Accept if true
-		bpf.RetConstant{Val: 0},                                                     // Reject if false
+		// Load ICMPv6 type
+		bpf.LoadAbsolute{Off: 0, Size: 1},
+
+		// BRANCH 1: Is this packet type Time Exceeded?
+		// If yes, ACCEPT immediately. We will filter by ID in Go (User Space).
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(ipv6.ICMPTypeTimeExceeded), SkipTrue: 3, SkipFalse: 0},
+
+		// BRANCH 2: Is this packet an ICMP Echo Reply?
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(ipv6.ICMPTypeEchoReply), SkipTrue: 0, SkipFalse: 3},
+
+		// ACTION: Match ID of the ICMP Echo Reply (Offset 4)
+		bpf.LoadAbsolute{Off: 4, Size: 2},
+		bpf.JumpIf{Cond: bpf.JumpEqual, Val: uint32(id), SkipTrue: 0, SkipFalse: 1},
+
+		bpf.RetConstant{Val: ^uint32(0)}, // ACCEPT
+		bpf.RetConstant{Val: 0},          // REJECT
 	})
 	if err != nil {
 		return err
