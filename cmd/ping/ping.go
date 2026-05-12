@@ -84,6 +84,10 @@ func main() {
 		fmt.Printf("%d bytes from %s: icmp_seq=%d time=%v ttl=%v (DUP!)\n",
 			pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt, pkt.TTL)
 	}
+	pinger.OnTimeExceeded = func(pkt *probing.Packet) {
+		fmt.Printf("From %s: icmp_seq=%d time=%v Time to live exceeded\n",
+			pkt.IPAddr, pkt.Seq, pkt.Rtt)
+	}
 	pinger.OnFinish = func(stats *probing.Statistics) {
 		fmt.Printf("\n--- %s ping statistics ---\n", stats.Addr)
 		fmt.Printf("%d packets transmitted, %d packets received, %d duplicates, %v%% packet loss\n",
