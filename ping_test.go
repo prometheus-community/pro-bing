@@ -376,6 +376,98 @@ func TestEmptyIPAddr(t *testing.T) {
 	AssertError(t, err, "empty pinger did not return an error")
 }
 
+func TestStatistics1(t *testing.T) {
+	// Create a localhost ipv4 pinger
+	p := New("localhost")
+	err := p.Resolve()
+	AssertNoError(t, err)
+	AssertEqualStrings(t, "localhost", p.Addr())
+
+	p.PacketsSent = 10
+	p.updateStatistics(&Packet{Rtt: time.Duration(2890)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(2330)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(2450)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(2990)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(3150)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(2700)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(3420)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(2400)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(3080)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(2850)})
+
+	stats := p.Statistics()
+	if stats.PacketsRecv != 10 {
+		t.Errorf("Expected %v, got %v", 10, stats.PacketsRecv)
+	}
+	if stats.PacketsSent != 10 {
+		t.Errorf("Expected %v, got %v", 10, stats.PacketsSent)
+	}
+	if stats.PacketLoss != 0 {
+		t.Errorf("Expected %v, got %v", 0, stats.PacketLoss)
+	}
+	if stats.MinRtt != time.Duration(2330) {
+		t.Errorf("Expected %v, got %v", time.Duration(2330), stats.MinRtt)
+	}
+	if stats.MaxRtt != time.Duration(3420) {
+		t.Errorf("Expected %v, got %v", time.Duration(3420), stats.MaxRtt)
+	}
+	if stats.AvgRtt != time.Duration(2826) {
+		t.Errorf("Expected %v, got %v", time.Duration(2826), stats.AvgRtt)
+	}
+	if stats.StdDevRtt != time.Duration(337) {
+		t.Errorf("Expected %v, got %v", time.Duration(337), stats.StdDevRtt)
+	}
+	if stats.Jitter != time.Duration(497) {
+		t.Errorf("Expected %v, got %v", time.Duration(497), stats.Jitter)
+	}
+}
+
+func TestStatistics2(t *testing.T) {
+	// Create a localhost ipv4 pinger
+	p := New("localhost")
+	err := p.Resolve()
+	AssertNoError(t, err)
+	AssertEqualStrings(t, "localhost", p.Addr())
+
+	p.PacketsSent = 10
+	p.updateStatistics(&Packet{Rtt: time.Duration(36700)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(36900)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(37600)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(37500)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(37400)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(37200)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(36700)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(37000)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(37200)})
+	p.updateStatistics(&Packet{Rtt: time.Duration(38100)})
+
+	stats := p.Statistics()
+	if stats.PacketsRecv != 10 {
+		t.Errorf("Expected %v, got %v", 10, stats.PacketsRecv)
+	}
+	if stats.PacketsSent != 10 {
+		t.Errorf("Expected %v, got %v", 10, stats.PacketsSent)
+	}
+	if stats.PacketLoss != 0 {
+		t.Errorf("Expected %v, got %v", 0, stats.PacketLoss)
+	}
+	if stats.MinRtt != time.Duration(36700) {
+		t.Errorf("Expected %v, got %v", time.Duration(36700), stats.MinRtt)
+	}
+	if stats.MaxRtt != time.Duration(38100) {
+		t.Errorf("Expected %v, got %v", time.Duration(38100), stats.MaxRtt)
+	}
+	if stats.AvgRtt != time.Duration(37230) {
+		t.Errorf("Expected %v, got %v", time.Duration(37230), stats.AvgRtt)
+	}
+	if stats.StdDevRtt != time.Duration(414) {
+		t.Errorf("Expected %v, got %v", time.Duration(414), stats.StdDevRtt)
+	}
+	if stats.Jitter != time.Duration(355) {
+		t.Errorf("Expected %v, got %v", time.Duration(355), stats.Jitter)
+	}
+}
+
 func TestStatisticsSunny(t *testing.T) {
 	// Create a localhost ipv4 pinger
 	p := New("localhost")
@@ -416,6 +508,9 @@ func TestStatisticsSunny(t *testing.T) {
 	}
 	if stats.StdDevRtt != time.Duration(0) {
 		t.Errorf("Expected %v, got %v", time.Duration(0), stats.StdDevRtt)
+	}
+	if stats.Jitter != time.Duration(0) {
+		t.Errorf("Expected %v, got %v", time.Duration(0), stats.Jitter)
 	}
 }
 
@@ -459,6 +554,9 @@ func TestStatisticsLossy(t *testing.T) {
 	}
 	if stats.StdDevRtt != time.Duration(29603) {
 		t.Errorf("Expected %v, got %v", time.Duration(29603), stats.StdDevRtt)
+	}
+	if stats.Jitter != time.Duration(24367) {
+		t.Errorf("Expected %v, got %v", time.Duration(24367), stats.Jitter)
 	}
 }
 
