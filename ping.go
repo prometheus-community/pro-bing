@@ -120,7 +120,7 @@ func New(addr string) *Pinger {
 		Timeout:    time.Duration(math.MaxInt64),
 
 		addr:              addr,
-		done:              make(chan interface{}),
+		done:              make(chan any),
 		id:                r.Intn(math.MaxUint16),
 		trackerUUIDs:      []uuid.UUID{firstUUID},
 		ipaddr:            nil,
@@ -225,7 +225,7 @@ type Pinger struct {
 	InterfaceName string
 
 	// Channel and mutex used to communicate when the Pinger should stop between goroutines.
-	done chan interface{}
+	done chan any
 	lock sync.Mutex
 
 	ipaddr *net.IPAddr
