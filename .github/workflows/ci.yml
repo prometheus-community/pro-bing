@@ -35,7 +35,7 @@ jobs:
       - name: Setup unprivileged UDP socket
         run: sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
       - name: Build and test
-        run: make
+        run: make GOOPTS=-v
 
   test-release:
     name: Test release
