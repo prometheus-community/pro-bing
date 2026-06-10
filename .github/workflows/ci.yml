@@ -32,6 +32,8 @@ jobs:
           cache-dependency-path: go.sum
       - name: Download Go modules
         run: go mod download
+      - name: Setup unprivileged UDP socket
+        run: sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
       - name: Build and test
         run: make
 
