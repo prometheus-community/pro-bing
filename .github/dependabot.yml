@@ -12,3 +12,5 @@ updates:
     exclude-paths:
       - .github/workflows/container_description.yml
       - .github/workflows/golangci-lint.yml
+      - .github/workflows/scorecards.yml
+      - .github/workflows/stale.yml
