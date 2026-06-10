@@ -889,9 +889,11 @@ func TestSetResolveTimeout(t *testing.T) {
 }
 
 func TestRunStatisticsConcurrent(t *testing.T) {
-	p := New("www.google.com")
+	p := New("localhost")
 	p.Count = 1
 	p.Interval = time.Millisecond
+	p.Timeout = time.Second
 	go p.Statistics()
-	p.Run()
+	err := p.Run()
+	AssertNoError(t, err)
 }
