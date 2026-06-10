@@ -2,9 +2,14 @@ GO           ?= go
 GOFMT        ?= $(GO)fmt
 GOOPTS       ?=
 GO111MODULE  :=
+GOLANGCI_LINT_VERSION ?= v2.12.2
 pkgs          = ./...
 
 all: style vet build test
+
+.PHONY: print-golangci-lint-version
+print-golangci-lint-version:
+	@echo "$(GOLANGCI_LINT_VERSION)"
 
 .PHONY: build
 build:
