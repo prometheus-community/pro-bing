@@ -74,6 +74,7 @@ import (
 	"math/rand"
 	"net"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -804,10 +805,8 @@ func (p *Pinger) getPacketUUID(pkt []byte) (*uuid.UUID, error) {
 		return nil, fmt.Errorf("error decoding tracking UUID: %w", err)
 	}
 
-	for _, item := range p.trackerUUIDs {
-		if item == packetUUID {
-			return &packetUUID, nil
-		}
+	if slices.Contains(p.trackerUUIDs, packetUUID) {
+		return &packetUUID, nil
 	}
 	return nil, nil
 }
@@ -1025,7 +1024,7 @@ func (p *Pinger) listen() (packetConn, error) {
 
 func bytesToTime(b []byte) time.Time {
 	var nsec int64
-	for i := uint8(0); i < 8; i++ {
+	for i := range uint8(8) {
 		nsec += int64(b[i]) << ((7 - i) * 8)
 	}
 	return time.Unix(nsec/1000000000, nsec%1000000000)
@@ -1038,7 +1037,7 @@ func isIPv4(ip net.IP) bool {
 func timeToBytes(t time.Time) []byte {
 	nsec := t.UnixNano()
 	b := make([]byte, 8)
-	for i := uint8(0); i < 8; i++ {
+	for i := range uint8(8) {
 		b[i] = byte((nsec >> ((7 - i) * 8)) & 0xff)
 	}
 	return b
