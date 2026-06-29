@@ -26,7 +26,7 @@ import (
 
 // TODO: figure out how to test onDNS callback
 func getTestHTTPClientServer() (*http.Client, *httptest.Server) {
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	return srv.Client(), srv
@@ -37,7 +37,7 @@ func TestHTTPCaller_MakeCall_OnReq(t *testing.T) {
 	defer srv.Close()
 
 	var callbackCalled bool
-	httpCaller := NewHttpCaller(srv.URL,
+	httpCaller := NewHTTPCaller(srv.URL,
 		WithHTTPCallerClient(client),
 		WithHTTPCallerOnReq(func(suite *TraceSuite) {
 			AssertTimeNonZero(t, suite.generalStart)
@@ -60,9 +60,9 @@ func TestHTTPCaller_MakeCall_OnConnStart(t *testing.T) {
 	defer srv.Close()
 
 	var callbackCalled bool
-	httpCaller := NewHttpCaller(srv.URL,
+	httpCaller := NewHTTPCaller(srv.URL,
 		WithHTTPCallerClient(client),
-		WithHTTPCallerOnConnStart(func(suite *TraceSuite, network, addr string) {
+		WithHTTPCallerOnConnStart(func(suite *TraceSuite, _, _ string) {
 			AssertTimeNonZero(t, suite.generalStart)
 			AssertTimeZero(t, suite.generalEnd)
 			AssertTimeNonZero(t, suite.connStart)
@@ -83,9 +83,9 @@ func TestHTTPCaller_MakeCall_OnConnDone(t *testing.T) {
 	defer srv.Close()
 
 	var callbackCalled bool
-	httpCaller := NewHttpCaller(srv.URL,
+	httpCaller := NewHTTPCaller(srv.URL,
 		WithHTTPCallerClient(client),
-		WithHTTPCallerOnConnDone(func(suite *TraceSuite, network, addr string, err error) {
+		WithHTTPCallerOnConnDone(func(suite *TraceSuite, _, _ string, _ error) {
 			AssertTimeNonZero(t, suite.generalStart)
 			AssertTimeZero(t, suite.generalEnd)
 			AssertTimeNonZero(t, suite.connStart)
@@ -106,7 +106,7 @@ func TestHTTPCaller_MakeCall_OnTLSStart(t *testing.T) {
 	defer srv.Close()
 
 	var callbackCalled bool
-	httpCaller := NewHttpCaller(srv.URL,
+	httpCaller := NewHTTPCaller(srv.URL,
 		WithHTTPCallerClient(client),
 		WithHTTPCallerOnTLSStart(func(suite *TraceSuite) {
 			AssertTimeNonZero(t, suite.generalStart)
@@ -129,9 +129,9 @@ func TestHTTPCaller_MakeCall_OnTLSDone(t *testing.T) {
 	defer srv.Close()
 
 	var callbackCalled bool
-	httpCaller := NewHttpCaller(srv.URL,
+	httpCaller := NewHTTPCaller(srv.URL,
 		WithHTTPCallerClient(client),
-		WithHTTPCallerOnTLSDone(func(suite *TraceSuite, state tls.ConnectionState, err error) {
+		WithHTTPCallerOnTLSDone(func(suite *TraceSuite, _ tls.ConnectionState, _ error) {
 			AssertTimeNonZero(t, suite.generalStart)
 			AssertTimeZero(t, suite.generalEnd)
 			AssertTimeNonZero(t, suite.connStart)
@@ -152,7 +152,7 @@ func TestHTTPCaller_MakeCall_OnWroteHeaders(t *testing.T) {
 	defer srv.Close()
 
 	var callbackCalled bool
-	httpCaller := NewHttpCaller(srv.URL,
+	httpCaller := NewHTTPCaller(srv.URL,
 		WithHTTPCallerClient(client),
 		WithHTTPCallerOnWroteRequest(func(suite *TraceSuite) {
 			AssertTimeNonZero(t, suite.generalStart)
@@ -175,7 +175,7 @@ func TestHTTPCaller_MakeCall_OnFirstByteReceived(t *testing.T) {
 	defer srv.Close()
 
 	var callbackCalled bool
-	httpCaller := NewHttpCaller(srv.URL,
+	httpCaller := NewHTTPCaller(srv.URL,
 		WithHTTPCallerClient(client),
 		WithHTTPCallerOnFirstByteReceived(func(suite *TraceSuite) {
 			AssertTimeNonZero(t, suite.generalStart)
@@ -198,9 +198,9 @@ func TestHTTPCaller_MakeCall_OnResp(t *testing.T) {
 	defer srv.Close()
 
 	var callbackCalled bool
-	httpCaller := NewHttpCaller(srv.URL,
+	httpCaller := NewHTTPCaller(srv.URL,
 		WithHTTPCallerClient(client),
-		WithHTTPCallerOnResp(func(suite *TraceSuite, info *HTTPCallInfo) {
+		WithHTTPCallerOnResp(func(suite *TraceSuite, _ *HTTPCallInfo) {
 			AssertTimeNonZero(t, suite.generalStart)
 			AssertTimeNonZero(t, suite.generalEnd)
 			AssertTimeNonZero(t, suite.connStart)
@@ -222,9 +222,9 @@ func TestHTTPCaller_MakeCall_IsValidResponse(t *testing.T) {
 
 	t.Run("no callback", func(t *testing.T) {
 		var callbackCalled bool
-		httpCaller := NewHttpCaller(srv.URL,
+		httpCaller := NewHTTPCaller(srv.URL,
 			WithHTTPCallerClient(client),
-			WithHTTPCallerOnResp(func(suite *TraceSuite, info *HTTPCallInfo) {
+			WithHTTPCallerOnResp(func(_ *TraceSuite, info *HTTPCallInfo) {
 				AssertTrue(t, info.IsValidResponse)
 				callbackCalled = true
 			}),
@@ -236,12 +236,12 @@ func TestHTTPCaller_MakeCall_IsValidResponse(t *testing.T) {
 
 	t.Run("false callback", func(t *testing.T) {
 		var callbackCalled bool
-		httpCaller := NewHttpCaller(srv.URL,
+		httpCaller := NewHTTPCaller(srv.URL,
 			WithHTTPCallerClient(client),
-			WithHTTPCallerIsValidResponse(func(response *http.Response, body []byte) bool {
+			WithHTTPCallerIsValidResponse(func(_ *http.Response, _ []byte) bool {
 				return false
 			}),
-			WithHTTPCallerOnResp(func(suite *TraceSuite, info *HTTPCallInfo) {
+			WithHTTPCallerOnResp(func(_ *TraceSuite, info *HTTPCallInfo) {
 				AssertFalse(t, info.IsValidResponse)
 				callbackCalled = true
 			}),
@@ -253,12 +253,12 @@ func TestHTTPCaller_MakeCall_IsValidResponse(t *testing.T) {
 
 	t.Run("true callback", func(t *testing.T) {
 		var callbackCalled bool
-		httpCaller := NewHttpCaller(srv.URL,
+		httpCaller := NewHTTPCaller(srv.URL,
 			WithHTTPCallerClient(client),
-			WithHTTPCallerIsValidResponse(func(response *http.Response, body []byte) bool {
+			WithHTTPCallerIsValidResponse(func(_ *http.Response, _ []byte) bool {
 				return true
 			}),
-			WithHTTPCallerOnResp(func(suite *TraceSuite, info *HTTPCallInfo) {
+			WithHTTPCallerOnResp(func(_ *TraceSuite, info *HTTPCallInfo) {
 				AssertTrue(t, info.IsValidResponse)
 				callbackCalled = true
 			}),
@@ -275,12 +275,12 @@ func TestHTTPCaller_RunWithContext(t *testing.T) {
 
 	var callsCount int
 	var callsCountMu sync.Mutex
-	httpCaller := NewHttpCaller(srv.URL,
+	httpCaller := NewHTTPCaller(srv.URL,
 		WithHTTPCallerMaxConcurrentCalls(5),
 		WithHTTPCallerCallFrequency(time.Second/5),
 		WithHTTPCallerClient(client),
 		WithHTTPCallerTimeout(time.Second),
-		WithHTTPCallerOnReq(func(suite *TraceSuite) {
+		WithHTTPCallerOnReq(func(_ *TraceSuite) {
 			callsCountMu.Lock()
 			defer callsCountMu.Unlock()
 			callsCount++

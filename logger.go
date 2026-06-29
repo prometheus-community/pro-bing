@@ -50,17 +50,17 @@ func (l StdLogger) Debugf(format string, v ...any) {
 type NoopLogger struct {
 }
 
-func (l NoopLogger) Fatalf(format string, v ...any) {
+func (l NoopLogger) Fatalf(_ string, _ ...any) {
 }
 
-func (l NoopLogger) Errorf(format string, v ...any) {
+func (l NoopLogger) Errorf(_ string, _ ...any) {
 }
 
-func (l NoopLogger) Warnf(format string, v ...any) {
+func (l NoopLogger) Warnf(_ string, _ ...any) {
 }
 
-func (l NoopLogger) Infof(format string, v ...any) {
+func (l NoopLogger) Infof(_ string, _ ...any) {
 }
 
-func (l NoopLogger) Debugf(format string, v ...any) {
+func (l NoopLogger) Debugf(_ string, _ ...any) {
 }
