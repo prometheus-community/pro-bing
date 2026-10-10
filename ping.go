@@ -468,7 +468,8 @@ func (p *Pinger) SetNetwork(n string) {
 }
 
 // SetPrivileged sets the type of ping pinger will send.
-// false means pinger will send an "unprivileged" UDP ping.
+// false means pinger will send an "unprivileged" ping over a datagram ICMP
+// socket. Both modes send ICMP echo requests; only the socket type differs.
 // true means pinger will send a "privileged" raw ICMP ping.
 // NOTE: setting to true requires that it be run with super-user privileges.
 func (p *Pinger) SetPrivileged(privileged bool) {
