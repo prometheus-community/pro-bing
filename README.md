@@ -87,8 +87,11 @@ $GOPATH/bin/ping
 ## Supported Operating Systems
 
 ### Linux
-This library attempts to send an "unprivileged" ping via UDP. On Linux,
-this must be enabled with the following sysctl command:
+This library attempts to send an "unprivileged" ping. This still sends ICMP echo
+requests, not UDP packets: it opens a datagram socket (`SOCK_DGRAM` with
+`IPPROTO_ICMP`) instead of a raw socket, which is why the Go network name for it
+is `udp4`/`udp6`. On Linux, this must be enabled with the following sysctl
+command:
 
 ```
 sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
