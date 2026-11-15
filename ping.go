@@ -73,6 +73,7 @@ import (
 	"math"
 	"math/rand"
 	"net"
+	"net/netip"
 	"runtime"
 	"slices"
 	"sync"
@@ -380,20 +381,35 @@ func (p *Pinger) IPAddr() *net.IPAddr {
 
 // Resolve does the DNS lookup for the Pinger address and sets IP protocol.
 func (p *Pinger) Resolve() error {
+	return p.resolve(context.Background())
+}
+
+func (p *Pinger) resolve(ctx context.Context) error {
 	if len(p.addr) == 0 {
 		return errors.New("addr cannot be empty")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	var (
 		ipaddr *net.IPAddr
 		err    error
 	)
-	if p.ResolveTimeout > time.Duration(0) {
-		var (
-			ctx = context.Background()
-			ips []net.IP
-		)
-		ctx, cancel := context.WithTimeout(ctx, p.ResolveTimeout)
-		defer cancel()
+	_, literalErr := netip.ParseAddr(p.addr)
+	if p.ResolveTimeout <= 0 && literalErr == nil {
+		// Literal addresses need no DNS lookup. Keep ResolveIPAddr's handling
+		// of address families and IPv6 zones.
+		ipaddr, err = net.ResolveIPAddr(p.network, p.addr)
+		if err != nil {
+			return err
+		}
+	} else {
+		if p.ResolveTimeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, p.ResolveTimeout)
+			defer cancel()
+		}
+		var ips []net.IP
 		ips, err = net.DefaultResolver.LookupIP(ctx, p.network, p.addr)
 		if err != nil {
 			return err
@@ -412,12 +428,12 @@ func (p *Pinger) Resolve() error {
 			}
 			if ip.To4() != nil {
 				ipaddr = &net.IPAddr{IP: ip}
+				// ResolveIPAddr prefers the first IPv4 address, while the
+				// ResolveTimeout path has historically selected the last.
+				if p.ResolveTimeout <= 0 {
+					break
+				}
 			}
-		}
-	} else {
-		ipaddr, err = net.ResolveIPAddr(p.network, p.addr)
-		if err != nil {
-			return err
 		}
 	}
 
@@ -535,8 +551,8 @@ func (p *Pinger) Run() error {
 }
 
 // RunWithContext runs the pinger with a context. This is a blocking function that will exit when it's
-// done or if the context is canceled. If Count or Interval are not specified, it will run continuously until
-// it is interrupted.
+// done or if the context is canceled, including during DNS resolution. If Count or Interval are not
+// specified, it will run continuously until it is interrupted.
 func (p *Pinger) RunWithContext(ctx context.Context) error {
 	var conn packetConn
 	var err error
@@ -544,7 +560,7 @@ func (p *Pinger) RunWithContext(ctx context.Context) error {
 		return fmt.Errorf("size %d is less than minimum required size %d", p.Size, timeSliceLength+trackerLength)
 	}
 	if p.ipaddr == nil {
-		err = p.Resolve()
+		err = p.resolve(ctx)
 	}
 	if err != nil {
 		return err
