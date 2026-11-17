@@ -910,3 +910,21 @@ func TestRunStatisticsConcurrent(t *testing.T) {
 	err := p.Run()
 	AssertNoError(t, err)
 }
+
+func TestStatisticsAvgRttOverflow(t *testing.T) {
+	// RTTs come from the timestamp echoed in the reply payload, so a forged
+	// reply can produce RTTs far enough apart that their difference does not
+	// fit in a time.Duration.
+	const year = 365 * 24 * time.Hour
+	p := New("127.0.0.1")
+	p.updateStatistics(&Packet{Rtt: -100 * year})
+	p.updateStatistics(&Packet{Rtt: 200 * year})
+
+	stats := p.Statistics()
+	if stats.AvgRtt != 50*year {
+		t.Errorf("Expected AvgRtt %v, got %v", 50*year, stats.AvgRtt)
+	}
+	if stats.StdDevRtt != 150*year {
+		t.Errorf("Expected StdDevRtt %v, got %v", 150*year, stats.StdDevRtt)
+	}
+}
