@@ -72,6 +72,11 @@ func (c *icmpV6Conn) SetMark(mark uint) error {
 	return ErrMarkNotSupported
 }
 
+// BindToDevice is only supported on Linux.
+func (c *icmpConn) BindToDevice(_ string) error {
+	return ErrBindToDeviceNotSupported
+}
+
 // SetDoNotFragment sets the do-not-fragment bit in the IP header of outgoing ICMP packets.
 func (c *icmpConn) SetDoNotFragment() error {
 	return ErrDFNotSupported

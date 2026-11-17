@@ -80,6 +80,41 @@ func (c *icmpV6Conn) SetMark(mark uint) error {
 	)
 }
 
+// bindToDevice sets SO_BINDTODEVICE on the socket behind sc. A device that does
+// not exist yields ENODEV; an unprivileged (SOCK_DGRAM) socket may be rejected
+// with EPERM on kernels older than 5.7.
+func bindToDevice(sc syscall.Conn, name string) error {
+	rc, err := sc.SyscallConn()
+	if err != nil {
+		return err
+	}
+	var sockErr error
+	if err := rc.Control(func(fd uintptr) {
+		sockErr = syscall.SetsockoptString(int(fd), syscall.SOL_SOCKET, syscall.SO_BINDTODEVICE, name)
+	}); err != nil {
+		return err
+	}
+	return os.NewSyscallError("setsockopt", sockErr)
+}
+
+// BindToDevice binds the IPv4 socket to the named network device.
+func (c *icmpv4Conn) BindToDevice(name string) error {
+	sc, ok := c.c.IPv4PacketConn().PacketConn.(syscall.Conn)
+	if !ok {
+		return errors.New("cannot access the underlying socket")
+	}
+	return bindToDevice(sc, name)
+}
+
+// BindToDevice binds the IPv6 socket to the named network device.
+func (c *icmpV6Conn) BindToDevice(name string) error {
+	sc, ok := c.c.IPv6PacketConn().PacketConn.(syscall.Conn)
+	if !ok {
+		return errors.New("cannot access the underlying socket")
+	}
+	return bindToDevice(sc, name)
+}
+
 // SetDoNotFragment sets the do-not-fragment bit in the IP header of outgoing ICMP packets.
 func (c *icmpConn) SetDoNotFragment() error {
 	fd, err := getFD(c.c)
