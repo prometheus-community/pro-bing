@@ -1,3 +1,16 @@
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package probing
 
 import (
@@ -46,7 +59,7 @@ type httpCallerOptions struct {
 	logger Logger
 }
 
-// HTTPCallerOption represents a function type for a functional parameter passed to a NewHttpCaller constructor.
+// HTTPCallerOption represents a function type for a functional parameter passed to a NewHTTPCaller constructor.
 type HTTPCallerOption func(options *httpCallerOptions)
 
 // WithHTTPCallerClient is a functional parameter for a HTTPCaller which specifies a http.Client.
@@ -68,9 +81,9 @@ func WithHTTPCallerCallFrequency(frequency time.Duration) HTTPCallerOption {
 // WithHTTPCallerMaxConcurrentCalls is a functional parameter for a HTTPCaller which specifies a number of
 // maximum concurrent calls. If this option is not provided the default one will be used. You can check default value in const
 // defaultHTTPMaxConcurrentCalls.
-func WithHTTPCallerMaxConcurrentCalls(max int) HTTPCallerOption {
+func WithHTTPCallerMaxConcurrentCalls(maxConcurrent int) HTTPCallerOption {
 	return func(options *httpCallerOptions) {
-		options.maxConcurrentCalls = max
+		options.maxConcurrentCalls = maxConcurrent
 	}
 }
 
@@ -216,9 +229,9 @@ func WithHTTPCallerLogger(logger Logger) HTTPCallerOption {
 	}
 }
 
-// NewHttpCaller returns a new HTTPCaller. URL parameter is the only required one, other options might be specified via
+// NewHTTPCaller returns a new HTTPCaller. URL parameter is the only required one, other options might be specified via
 // functional parameters, otherwise default values will be used where applicable.
-func NewHttpCaller(url string, options ...HTTPCallerOption) *HTTPCaller {
+func NewHTTPCaller(url string, options ...HTTPCallerOption) *HTTPCaller {
 	opts := httpCallerOptions{
 		callFrequency:      defaultHTTPCallFrequency,
 		maxConcurrentCalls: defaultHTTPMaxConcurrentCalls,
@@ -365,9 +378,7 @@ func (c *HTTPCaller) run(ctx context.Context) {
 }
 
 func (c *HTTPCaller) runWorkScheduler(ctx context.Context) {
-	c.doneWg.Add(1)
-	go func() {
-		defer c.doneWg.Done()
+	c.doneWg.Go(func() {
 
 		ticker := time.NewTicker(c.callFrequency)
 		defer ticker.Stop()
@@ -382,14 +393,12 @@ func (c *HTTPCaller) runWorkScheduler(ctx context.Context) {
 				return
 			}
 		}
-	}()
+	})
 }
 
 func (c *HTTPCaller) runCallers(ctx context.Context) {
 	for i := 0; i < c.maxConcurrentCalls; i++ {
-		c.doneWg.Add(1)
-		go func() {
-			defer c.doneWg.Done()
+		c.doneWg.Go(func() {
 			for {
 				logger := c.logger
 				if logger == nil {
@@ -406,7 +415,7 @@ func (c *HTTPCaller) runCallers(ctx context.Context) {
 					return
 				}
 			}
-		}()
+		})
 	}
 }
 

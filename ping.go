@@ -1,3 +1,16 @@
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Package probing is a simple but powerful ICMP echo (ping) library.
 //
 // Here is a very simple example that sends and receives three packets:
@@ -61,6 +74,7 @@ import (
 	"math/rand"
 	"net"
 	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -122,7 +136,7 @@ func New(addr string) *Pinger {
 		Timeout:    time.Duration(math.MaxInt64),
 
 		addr:              addr,
-		done:              make(chan interface{}),
+		done:              make(chan any),
 		id:                r.Intn(math.MaxUint16),
 		trackerUUIDs:      []uuid.UUID{firstUUID},
 		ipaddr:            nil,
@@ -230,7 +244,7 @@ type Pinger struct {
 	InterfaceName string
 
 	// Channel and mutex used to communicate when the Pinger should stop between goroutines.
-	done chan interface{}
+	done chan any
 	lock sync.Mutex
 
 	ipaddr *net.IPAddr
@@ -473,7 +487,8 @@ func (p *Pinger) SetNetwork(n string) {
 }
 
 // SetPrivileged sets the type of ping pinger will send.
-// false means pinger will send an "unprivileged" UDP ping.
+// false means pinger will send an "unprivileged" ping over a datagram ICMP
+// socket. Both modes send ICMP echo requests; only the socket type differs.
 // true means pinger will send a "privileged" raw ICMP ping.
 // NOTE: setting to true requires that it be run with super-user privileges.
 func (p *Pinger) SetPrivileged(privileged bool) {
@@ -823,10 +838,8 @@ func (p *Pinger) getPacketUUID(pkt []byte) (*uuid.UUID, error) {
 		return nil, fmt.Errorf("error decoding tracking UUID: %w", err)
 	}
 
-	for _, item := range p.trackerUUIDs {
-		if item == packetUUID {
-			return &packetUUID, nil
-		}
+	if slices.Contains(p.trackerUUIDs, packetUUID) {
+		return &packetUUID, nil
 	}
 	return nil, nil
 }
@@ -1119,7 +1132,7 @@ func (p *Pinger) listen() (packetConn, error) {
 
 func bytesToTime(b []byte) time.Time {
 	var nsec int64
-	for i := uint8(0); i < 8; i++ {
+	for i := range uint8(8) {
 		nsec += int64(b[i]) << ((7 - i) * 8)
 	}
 	return time.Unix(nsec/1000000000, nsec%1000000000)
@@ -1132,7 +1145,7 @@ func isIPv4(ip net.IP) bool {
 func timeToBytes(t time.Time) []byte {
 	nsec := t.UnixNano()
 	b := make([]byte, 8)
-	for i := uint8(0); i < 8; i++ {
+	for i := range uint8(8) {
 		b[i] = byte((nsec >> ((7 - i) * 8)) & 0xff)
 	}
 	return b

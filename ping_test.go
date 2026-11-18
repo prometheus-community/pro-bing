@@ -1,3 +1,16 @@
+// Copyright The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package probing
 
 import (
@@ -25,7 +38,7 @@ func TestProcessPacket(t *testing.T) {
 	pinger := makeTestPinger()
 	shouldBe1 := 0
 	// this function should be called
-	pinger.OnRecv = func(pkt *Packet) {
+	pinger.OnRecv = func(_ *Packet) {
 		shouldBe1++
 	}
 
@@ -65,7 +78,7 @@ func TestProcessPacket_IgnoreNonEchoReplies(t *testing.T) {
 	pinger := makeTestPinger()
 	shouldBe0 := 0
 	// this function should not be called because the tracker is mismatched
-	pinger.OnRecv = func(pkt *Packet) {
+	pinger.OnRecv = func(_ *Packet) {
 		shouldBe0++
 	}
 
@@ -104,7 +117,7 @@ func TestProcessPacket_IDMismatch(t *testing.T) {
 	pinger.protocol = "icmp" // ID is only checked on "icmp" protocol
 	shouldBe0 := 0
 	// this function should not be called because the tracker is mismatched
-	pinger.OnRecv = func(pkt *Packet) {
+	pinger.OnRecv = func(_ *Packet) {
 		shouldBe0++
 	}
 
@@ -142,7 +155,7 @@ func TestProcessPacket_TrackerMismatch(t *testing.T) {
 	pinger := makeTestPinger()
 	shouldBe0 := 0
 	// this function should not be called because the tracker is mismatched
-	pinger.OnRecv = func(pkt *Packet) {
+	pinger.OnRecv = func(_ *Packet) {
 		shouldBe0++
 	}
 
@@ -823,11 +836,11 @@ func TestProcessPacket_IgnoresDuplicateSequence(t *testing.T) {
 	dups := 0
 
 	// this function should not be called because the tracker is mismatched
-	pinger.OnRecv = func(pkt *Packet) {
+	pinger.OnRecv = func(_ *Packet) {
 		shouldBe0++
 	}
 
-	pinger.OnDuplicateRecv = func(pkt *Packet) {
+	pinger.OnDuplicateRecv = func(_ *Packet) {
 		dups++
 	}
 
@@ -875,21 +888,21 @@ type testPacketConn struct{}
 func (c testPacketConn) Close() error                      { return nil }
 func (c testPacketConn) ICMPRequestType() icmp.Type        { return ipv4.ICMPTypeEcho }
 func (c testPacketConn) SetFlagTTL() error                 { return nil }
-func (c testPacketConn) SetReadDeadline(t time.Time) error { return nil }
-func (c testPacketConn) SetTTL(t int)                      {}
-func (c testPacketConn) SetMark(m uint) error              { return nil }
+func (c testPacketConn) SetReadDeadline(_ time.Time) error { return nil }
+func (c testPacketConn) SetTTL(_ int)                      {}
+func (c testPacketConn) SetMark(_ uint) error              { return nil }
 func (c testPacketConn) SetDoNotFragment() error           { return nil }
 func (c testPacketConn) SetBroadcastFlag() error           { return nil }
-func (c testPacketConn) InstallICMPIDFilter(id int) error  { return nil }
-func (c testPacketConn) SetIfIndex(ifIndex int)            {}
-func (c testPacketConn) SetSource(source net.IP)           {}
+func (c testPacketConn) InstallICMPIDFilter(_ int) error   { return nil }
+func (c testPacketConn) SetIfIndex(_ int)                  {}
+func (c testPacketConn) SetSource(_ net.IP)                {}
 func (c testPacketConn) SetTrafficClass(uint8) error       { return nil }
 
-func (c testPacketConn) ReadFrom(b []byte) (n int, ttl int, src net.Addr, err error) {
+func (c testPacketConn) ReadFrom(_ []byte) (n int, ttl int, src net.Addr, err error) {
 	return 0, 0, testAddr, nil
 }
 
-func (c testPacketConn) WriteTo(b []byte, dst net.Addr) (int, error) {
+func (c testPacketConn) WriteTo(b []byte, _ net.Addr) (int, error) {
 	return len(b), nil
 }
 
@@ -897,7 +910,7 @@ type testPacketConnBadWrite struct {
 	testPacketConn
 }
 
-func (c testPacketConnBadWrite) WriteTo(b []byte, dst net.Addr) (int, error) {
+func (c testPacketConnBadWrite) WriteTo(_ []byte, _ net.Addr) (int, error) {
 	return 0, errors.New("bad write")
 }
 
@@ -926,7 +939,7 @@ type testPacketConnBadRead struct {
 	testPacketConn
 }
 
-func (c testPacketConnBadRead) ReadFrom(b []byte) (n int, ttl int, src net.Addr, err error) {
+func (c testPacketConnBadRead) ReadFrom(_ []byte) (n int, ttl int, src net.Addr, err error) {
 	return 0, 0, testAddr, errors.New("bad read")
 }
 
@@ -1076,9 +1089,11 @@ func TestSetResolveTimeout(t *testing.T) {
 }
 
 func TestRunStatisticsConcurrent(t *testing.T) {
-	p := New("www.google.com")
+	p := New("localhost")
 	p.Count = 1
 	p.Interval = time.Millisecond
+	p.Timeout = time.Second
 	go p.Statistics()
-	p.Run()
+	err := p.Run()
+	AssertNoError(t, err)
 }

@@ -1,6 +1,6 @@
 # pro-bing
 [![PkgGoDev](https://pkg.go.dev/badge/github.com/prometheus-community/pro-bing)](https://pkg.go.dev/github.com/prometheus-community/pro-bing)
-[![Circle CI](https://circleci.com/gh/prometheus-community/pro-bing.svg?style=svg)](https://circleci.com/gh/prometheus-community/pro-bing)
+[![Build Status](https://github.com/prometheus-community/pro-bing/actions/workflows/ci.yml/badge.svg)](https://github.com/prometheus-community/pro-bing/actions/workflows/ci.yml)
 
 A simple but powerful ICMP echo (ping) library for Go, inspired by
 [go-ping](https://github.com/go-ping/ping) & [go-fastping](https://github.com/tatsushid/go-fastping).
@@ -87,8 +87,11 @@ $GOPATH/bin/ping
 ## Supported Operating Systems
 
 ### Linux
-This library attempts to send an "unprivileged" ping via UDP. On Linux,
-this must be enabled with the following sysctl command:
+This library attempts to send an "unprivileged" ping. This still sends ICMP echo
+requests, not UDP packets: it opens a datagram socket (`SOCK_DGRAM` with
+`IPPROTO_ICMP`) instead of a raw socket, which is why the Go network name for it
+is `udp4`/`udp6`. On Linux, this must be enabled with the following sysctl
+command:
 
 ```
 sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
@@ -139,7 +142,7 @@ This library also provides support for HTTP probing.
 Here is a trivial example:
 
 ```go
-httpCaller := probing.NewHttpCaller("https://www.google.com",
+httpCaller := probing.NewHTTPCaller("https://www.google.com",
     probing.WithHTTPCallerCallFrequency(time.Second),
     probing.WithHTTPCallerOnResp(func(suite *probing.TraceSuite, info *probing.HTTPCallInfo) {
         fmt.Printf("got resp, status code: %d, latency: %s\n",
