@@ -98,7 +98,7 @@ func main() {
 			pkt.Nbytes, pkt.IPAddr, pkt.Seq, pkt.Rtt, pkt.TTL)
 	}
 	pinger.OnTimeExceeded = func(pkt *probing.Packet) {
-		fmt.Printf("From %s: icmp_seq=%d time=%v Time to live exceeded\n",
+		fmt.Printf("From %s: icmp_seq=%d time=%v ICMP (Type 11) time exceeded\n",
 			pkt.IPAddr, pkt.Seq, pkt.Rtt)
 	}
 	pinger.OnFinish = func(stats *probing.Statistics) {

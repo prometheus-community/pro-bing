@@ -222,7 +222,7 @@ type Pinger struct {
 	// OnDuplicateRecv is called when a packet is received that has already been received.
 	OnDuplicateRecv func(*Packet)
 
-	// OnTimeExceeded is called when an ICMP Time Exceeded message is received.
+	// OnTimeExceeded is called when an ICMP Time Exceeded (Type 11) message is received.
 	OnTimeExceeded func(*Packet)
 
 	// OnSendError is called when an error occurs while Pinger attempts to send a packet
