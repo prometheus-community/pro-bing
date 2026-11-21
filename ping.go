@@ -352,15 +352,19 @@ func (p *Pinger) updateStatistics(pkt *Packet) {
 		p.maxRtt = pkt.Rtt
 	}
 
-	pktCount := time.Duration(p.PacketsRecv)
+	pktCount := float64(p.PacketsRecv)
 	// welford's online method for stddev
 	// https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Welford's_online_algorithm
-	delta := pkt.Rtt - p.avgRtt
-	p.avgRtt += delta / pktCount
-	delta2 := pkt.Rtt - p.avgRtt
-	p.stddevm2 += float64(delta) * float64(delta2)
+	//
+	// The deltas are computed in float64: the RTT comes from the timestamp
+	// echoed in the reply, so two RTTs can be far enough apart that their
+	// difference overflows a time.Duration.
+	delta := float64(pkt.Rtt) - float64(p.avgRtt)
+	p.avgRtt += time.Duration(delta / pktCount)
+	delta2 := float64(pkt.Rtt) - float64(p.avgRtt)
+	p.stddevm2 += delta * delta2
 
-	p.stdDevRtt = time.Duration(math.Sqrt(p.stddevm2 / float64(pktCount)))
+	p.stdDevRtt = time.Duration(math.Sqrt(p.stddevm2 / pktCount))
 }
 
 // SetIPAddr sets the ip address of the target host.
