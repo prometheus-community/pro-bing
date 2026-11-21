@@ -22,6 +22,7 @@ import (
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -746,6 +747,34 @@ func TestRunBadWrite(t *testing.T) {
 	}
 	AssertTrue(t, stats.PacketsSent == 0)
 	AssertTrue(t, stats.PacketsRecv == 0)
+}
+
+type testPacketConnDenied struct {
+	testPacketConn
+	writes int
+}
+
+func (c *testPacketConnDenied) WriteTo(_ []byte, _ net.Addr) (int, error) {
+	c.writes++
+	if c.writes > 50 {
+		return 0, errors.New("write retried too many times")
+	}
+	return 0, &net.OpError{Op: "write", Err: syscall.EACCES}
+}
+
+func TestSendICMPPersistentEACCES(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the broadcast retry only applies on linux")
+	}
+	pinger := makeTestPinger()
+	pinger.SetLogger(NoopLogger{})
+
+	conn := &testPacketConnDenied{}
+	err := pinger.sendICMP(conn)
+
+	AssertTrue(t, errors.Is(err, syscall.EACCES))
+	AssertEquals(t, 2, conn.writes)
+	AssertEquals(t, 0, pinger.PacketsSent)
 }
 
 type testPacketConnBadRead struct {
