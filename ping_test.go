@@ -704,6 +704,7 @@ func (c testPacketConn) SetFlagTTL() error                 { return nil }
 func (c testPacketConn) SetReadDeadline(_ time.Time) error { return nil }
 func (c testPacketConn) SetTTL(_ int)                      {}
 func (c testPacketConn) SetMark(_ uint) error              { return nil }
+func (c testPacketConn) BindToDevice(_ string) error       { return nil }
 func (c testPacketConn) SetDoNotFragment() error           { return nil }
 func (c testPacketConn) SetBroadcastFlag() error           { return nil }
 func (c testPacketConn) InstallICMPIDFilter(_ int) error   { return nil }

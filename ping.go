@@ -104,6 +104,8 @@ var (
 
 	ErrMarkNotSupported = errors.New("setting SO_MARK socket option is not supported on this platform")
 	ErrDFNotSupported   = errors.New("setting do-not-fragment bit is not supported on this platform")
+
+	ErrBindToDeviceNotSupported = errors.New("binding to a network device is not supported on this platform")
 )
 
 // New returns a new Pinger struct pointer.
@@ -224,6 +226,15 @@ type Pinger struct {
 
 	// Interface used to send/recv ICMP messages
 	InterfaceName string
+
+	// BindToDevice, when non-empty, binds the ICMP socket to the named network
+	// device with SO_BINDTODEVICE (Linux only). Unlike InterfaceName, which only
+	// attaches an interface index to each outgoing packet as a control message,
+	// the socket itself is bound: outgoing packets leave through that device
+	// and only packets arriving on it are delivered to the socket. Run returns
+	// an error, without sending anything, if the device does not exist or cannot
+	// be bound. There is no silent fallback to the default route.
+	BindToDevice string
 
 	// Channel and mutex used to communicate when the Pinger should stop between goroutines.
 	done chan any
@@ -557,6 +568,12 @@ func (p *Pinger) RunWithContext(ctx context.Context) error {
 	if p.mark != 0 {
 		if err := conn.SetMark(p.mark); err != nil {
 			return fmt.Errorf("error setting mark: %v", err)
+		}
+	}
+
+	if p.BindToDevice != "" {
+		if err := conn.BindToDevice(p.BindToDevice); err != nil {
+			return fmt.Errorf("error binding to device %q: %w", p.BindToDevice, err)
 		}
 	}
 

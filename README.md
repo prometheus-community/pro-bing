@@ -113,6 +113,13 @@ This library supports setting the `SO_MARK` socket option which is equivalent to
 flag in standard ping binaries on linux. Setting this option requires the `CAP_NET_ADMIN` capability
 (via `setcap` or elevated privileges). You can set a mark (ex: 100) with `pinger.SetMark(100)` in your code.
 
+You can bind the socket to a network device with `pinger.BindToDevice = "eth0"`, which is
+equivalent to `ping -I eth0` and uses `SO_BINDTODEVICE`. Unlike `InterfaceName`, which only selects the
+outgoing interface per packet, the socket itself is bound, so replies arriving on other devices are
+ignored. `Run` returns an error, before sending anything, if the device does not exist or the socket
+cannot be bound. Binding a raw socket requires `CAP_NET_RAW`; for an unprivileged datagram socket
+Linux 5.7 or newer is required.
+
 Setting the "Don't Fragment" bit is supported under Linux which is equivalent to `ping -Mdo`.
 You can enable this with `pinger.SetDoNotFragment(true)`.
 

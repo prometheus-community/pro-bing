@@ -32,6 +32,7 @@ type packetConn interface {
 	WriteTo(b []byte, dst net.Addr) (int, error)
 	SetTTL(ttl int)
 	SetMark(m uint) error
+	BindToDevice(name string) error
 	SetDoNotFragment() error
 	SetBroadcastFlag() error
 	SetIfIndex(ifIndex int)
