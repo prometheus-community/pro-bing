@@ -938,10 +938,14 @@ func (p *Pinger) sendICMP(conn packetConn) error {
 		return err
 	}
 
+	broadcastTried := false
 	for {
 		if _, err := conn.WriteTo(msgBytes, dst); err != nil {
-			// Try to set broadcast flag
-			if errors.Is(err, syscall.EACCES) && runtime.GOOS == "linux" {
+			// Try to set the broadcast flag, but only once. EACCES is also
+			// what the kernel returns for a prohibit route, and retrying
+			// forever would spin without ever reporting the error.
+			if !broadcastTried && errors.Is(err, syscall.EACCES) && runtime.GOOS == "linux" {
+				broadcastTried = true
 				if e := conn.SetBroadcastFlag(); e != nil {
 					p.logger.Warnf("had EACCES syscall error, check your local firewall")
 				}
